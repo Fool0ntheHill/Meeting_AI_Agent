@@ -1,0 +1,350 @@
+在 Foundry 工具中将快速听录 API 与 Azure 语音配合使用
+快速听录 API 用于听录音频文件并同步返回结果，且速度比实时音频更快。 在需要尽快获得音频录制脚本且可预测延迟的情况下使用快速听录，例如：
+
+快速音频或视频听录、字幕和编辑。
+会议记录
+语音邮件
+与批量听录 API 不同，快速听录 API 仅生成显示形式(而不是词法形式)的听录内容。 显示形式是一种更方便阅读的听录形式，包含标点和大写。
+
+ 提示
+
+还可以将最新的 LLM 支持的语音听录和语音翻译与 LLM 语音配合使用。
+
+先决条件
+快速听录 API 可用的某个区域中的 Azure 语音资源。 有关受支持区域的当前列表，请参阅 语音服务区域表。
+
+音频文件（长度小于 2 小时且大小小于 300 MB），采用批处理听录 API 支持的格式和编解码器之一：WAV、MP3、OPUS/OGG、FLAC、WMA、AAC、WAV 容器中的 ALAW、WAV 容器中的 MULAW、AMR、WebM 和 SPEEX。 有关受支持的音频格式的详细信息，请参阅受支持的音频格式。
+
+上传音频
+您可以通过以下方式提供音频数据以实现快速转录：
+
+内嵌音频上传
+--form 'audio=@"YourAudioFile"'
+来自公共 URL 的音频
+--form 'definition="{"audioUrl": "https://crbn.us/hello.wav"}"'
+在以下部分中，内联音频上传用作示例。
+
+使用快速转录 API
+ 提示
+
+试用 Microsoft Foundry 门户中的快速语音转录。
+
+我们了解如何在以下场景中使用快速听录 API (通过 听录 - 转录):
+
+已知的语言环境已指定: 使用指定的语言环境转录音频文件。 如果知道音频文件的地区设置，可以进行指定以提高转录准确性并尽量减少延迟。
+启用了语言标识：转录启用了语言标识的音频文件。 如果不确定音频文件的区域设置，可以启用语言标识，让语音服务标识区域设置（每个音频一个区域设置）。
+多语言听录（预览版）：使用最新的多语言语音听录模型转录音频文件。 如果音频包含要持续准确地听录的多语言内容，则可以在不指定区域设置代码的情况下使用最新的多语言语音听录模型。
+启用了分割聚类：转录启用了分割聚类功能的音频文件。 分割聚类可区分对话中的不同说话人。 语音服务提供有关转录的语音的特定部分的说话人的信息。
+启用了多声道：转录包含一个或两个声道的音频文件。 多声道听录对于具有多个声道的音频文件非常有用，例如包含多个说话人的音频文件或有背景噪音的音频文件。 默认情况下，快速听录 API 将所有输入声道合并到单个声道，然后执行听录。 如果不希望这样处理，可以独立转录各个声道，而不进行合并。
+指定了已知区域设置
+语言识别已开启
+多语言听录
+启用了分割聚类
+启用了多声道
+使用音频文件和请求正文属性向transcriptions终结点发出多部分/表单数据 POST 请求。
+
+以下示例演示了如何使用指定的语言设置转录音频文件。 如果知道音频文件的地区设置，可以进行指定以提高转录准确性并尽量减少延迟。
+
+将 YourSpeechResoureKey 替换为语音资源密钥。
+将 YourServiceRegion 替换为你所在的语音资源区域。
+将YourAudioFile替换为音频文件的路径。
+ 重要
+
+对于建议使用 Microsoft Entra ID 的无密钥身份验证，请将 --header 'Ocp-Apim-Subscription-Key: YourSpeechResoureKey' 替换为 --header "Authorization: Bearer YourAccessToken"。 有关无密钥身份验证的详细信息，请参阅 基于角色的访问控制 作指南。
+
+Azure CLI
+curl --location 'https://YourServiceRegion.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15' \
+--header 'Content-Type: multipart/form-data' \
+--header 'Ocp-Apim-Subscription-Key: YourSpeechResoureKey' \
+--form 'audio=@"YourAudioFile"' \
+--form 'definition="{
+    "locales":["en-US"]}"'
+根据以下说明构建形式定义:
+
+设置可选(但建议选择)的 locales 属性，该属性应与要转录的音频数据的预期语言设置匹配。 在此示例中，区域设置为 en-US。 有关支持的语言环境的详细信息，请参阅 语音转文本支持的语言。
+有关快速听录 API locales 和其他属性的详细信息，请参阅本指南后面的“请求配置选项”部分。
+
+响应包括 durationMilliseconds、offsetMilliseconds等。 combinedPhrases 属性包含每个说话人的完整听录内容。
+
+JSON
+{
+	"durationMilliseconds": 182439,
+	"combinedPhrases": [
+		{
+			"text": "Good afternoon. This is Sam. Thank you for calling Contoso. How can I help? Hi there. My name is Mary. I'm currently living in Los Angeles, but I'm planning to move to Las Vegas. I would like to apply for a loan. Okay. I see you're currently living in California. Let me make sure I understand you correctly. Uh You'd like to apply for a loan even though you'll be moving soon. Is that right? Yes, exactly. So I'm planning to relocate soon, but I would like to apply for the loan first so that I can purchase a new home once I move there. And are you planning to sell your current home? Yes, I will be listing it on the market soon and hopefully it'll sell quickly. That's why I'm applying for a loan now, so that I can purchase a new house in Nevada and close on it quickly as well once my current home sells. I see. Would you mind holding for a moment while I take your information down? Yeah, no problem. Thank you for your help. Mm-hmm. Just one moment. All right. Thank you for your patience, ma'am. May I have your first and last name, please? Yes, my name is Mary Smith. Thank you, Ms. Smith. May I have your current address, please? Yes. So my address is 123 Main Street in Los Angeles, California, and the zip code is 90923. Sorry, that was a 90 what? 90923. 90923 on Main Street. Got it. Thank you. May I have your phone number as well, please? Uh Yes, my phone number is 504-529-2351 and then yeah. 2351. Got it. And do you have an e-mail address we I can associate with this application? uh Yes, so my e-mail address is mary.a.sm78@gmail.com. Mary.a, was that a S-N as in November or M as in Mike? M as in Mike. Mike78, got it. Thank you. Ms. Smith, do you currently have any other loans? Uh Yes, so I currently have two other loans through Contoso. So my first one is my car loan and then my other is my student loan. They total about 1400 per month combined and my interest rate is 8%. I see. And you're currently paying those loans off monthly, is that right? Yes, of course I do. OK, thank you. Here's what I suggest we do. Let me place you on a brief hold again so that I can talk with one of our loan officers and get this started for you immediately. In the meantime, it would be great if you could take a few minutes and complete the remainder of the secure application online at www.contosoloans.com. Yeah, that sounds good. I can go ahead and get started. Thank you for your help. Thank you."
+		}
+	],
+	"phrases": [
+		{
+			"offsetMilliseconds": 960,
+			"durationMilliseconds": 640,
+			"text": "Good afternoon.",
+			"words": [
+				{
+					"text": "Good",
+					"offsetMilliseconds": 960,
+					"durationMilliseconds": 240
+				},
+				{
+					"text": "afternoon.",
+					"offsetMilliseconds": 1200,
+					"durationMilliseconds": 400
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.93554276
+		},
+		{
+			"offsetMilliseconds": 1600,
+			"durationMilliseconds": 640,
+			"text": "This is Sam.",
+			"words": [
+				{
+					"text": "This",
+					"offsetMilliseconds": 1600,
+					"durationMilliseconds": 240
+				},
+				{
+					"text": "is",
+					"offsetMilliseconds": 1840,
+					"durationMilliseconds": 120
+				},
+				{
+					"text": "Sam.",
+					"offsetMilliseconds": 1960,
+					"durationMilliseconds": 280
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.93554276
+		},
+		{
+			"offsetMilliseconds": 2240,
+			"durationMilliseconds": 1040,
+			"text": "Thank you for calling Contoso.",
+			"words": [
+				{
+					"text": "Thank",
+					"offsetMilliseconds": 2240,
+					"durationMilliseconds": 200
+				},
+				{
+					"text": "you",
+					"offsetMilliseconds": 2440,
+					"durationMilliseconds": 80
+				},
+				{
+					"text": "for",
+					"offsetMilliseconds": 2520,
+					"durationMilliseconds": 120
+				},
+				{
+					"text": "calling",
+					"offsetMilliseconds": 2640,
+					"durationMilliseconds": 200
+				},
+				{
+					"text": "Contoso.",
+					"offsetMilliseconds": 2840,
+					"durationMilliseconds": 440
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.93554276
+		},
+		{
+			"offsetMilliseconds": 3280,
+			"durationMilliseconds": 640,
+			"text": "How can I help?",
+			"words": [
+				{
+					"text": "How",
+					"offsetMilliseconds": 3280,
+					"durationMilliseconds": 120
+				},
+				{
+					"text": "can",
+					"offsetMilliseconds": 3440,
+					"durationMilliseconds": 120
+				},
+				{
+					"text": "I",
+					"offsetMilliseconds": 3560,
+					"durationMilliseconds": 40
+				},
+				{
+					"text": "help?",
+					"offsetMilliseconds": 3600,
+					"durationMilliseconds": 320
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.93554276
+		},
+		{
+			"offsetMilliseconds": 5040,
+			"durationMilliseconds": 400,
+			"text": "Hi there.",
+			"words": [
+				{
+					"text": "Hi",
+					"offsetMilliseconds": 5040,
+					"durationMilliseconds": 240
+				},
+				{
+					"text": "there.",
+					"offsetMilliseconds": 5280,
+					"durationMilliseconds": 160
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.93554276
+		},
+		{
+			"offsetMilliseconds": 5440,
+			"durationMilliseconds": 800,
+			"text": "My name is Mary.",
+			"words": [
+				{
+					"text": "My",
+					"offsetMilliseconds": 5440,
+					"durationMilliseconds": 80
+				},
+				{
+					"text": "name",
+					"offsetMilliseconds": 5520,
+					"durationMilliseconds": 120
+				},
+				{
+					"text": "is",
+					"offsetMilliseconds": 5640,
+					"durationMilliseconds": 80
+				},
+				{
+					"text": "Mary.",
+					"offsetMilliseconds": 5720,
+					"durationMilliseconds": 520
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.93554276
+		},
+		// More transcription results...
+	    // Redacted for brevity
+		{
+			"offsetMilliseconds": 180320,
+			"durationMilliseconds": 680,
+			"text": "Thank you for your help.",
+			"words": [
+				{
+					"text": "Thank",
+					"offsetMilliseconds": 180320,
+					"durationMilliseconds": 160
+				},
+				{
+					"text": "you",
+					"offsetMilliseconds": 180480,
+					"durationMilliseconds": 80
+				},
+				{
+					"text": "for",
+					"offsetMilliseconds": 180560,
+					"durationMilliseconds": 120
+				},
+				{
+					"text": "your",
+					"offsetMilliseconds": 180680,
+					"durationMilliseconds": 120
+				},
+				{
+					"text": "help.",
+					"offsetMilliseconds": 180800,
+					"durationMilliseconds": 200
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.92022026
+		},
+		{
+			"offsetMilliseconds": 181960,
+			"durationMilliseconds": 280,
+			"text": "Thank you.",
+			"words": [
+				{
+					"text": "Thank",
+					"offsetMilliseconds": 181960,
+					"durationMilliseconds": 200
+				},
+				{
+					"text": "you.",
+					"offsetMilliseconds": 182160,
+					"durationMilliseconds": 80
+				}
+			],
+			"locale": "en-US",
+			"confidence": 0.92022026
+		}
+	]
+}
+ 注意
+
+语音服务是一项弹性服务。 如果收到 429 错误代码（请求过多），请按照最佳做法在自动缩放期间缓解限制。
+
+请求配置选项
+下面是一些属性选项，可用于在调用 Transcriptions - Transcribe 操作时配置转录。
+
+属性	说明	必需还是可选
+channels	要单独转录的声道的从零开始的索引列表。 除非启用分割聚类，否则最多支持两个声道。 默认情况下，快速听录 API 将所有输入声道合并到单个声道，然后执行听录。 如果不希望这样处理，可以独立转录各个声道，而不进行合并。
+
+如果要从立体声音频文件中单独转录各个声道，需要指定 [0,1]、[0] 和 [1]。 否则，立体声音频将合并为单声道，并且仅转录单个声道。
+
+如果音频是立体声且已启用分割聚类，则无法将 channels 属性设置为 [0,1]。 语音服务不支持对多个声道进行分割聚类。
+
+对于单声道音频，系统将忽略 channels 属性，始终将音频作为单声道进行转录。	可选
+diarization	分割聚类配置。 分割聚类是在一个音频声道中识别和分离说话人的过程。 例如，指定 "diarization": {"maxSpeakers": 2, "enabled": true}。 然后，听录文件会包含每个已转录短语的 speaker 个条目(例如 "speaker": 0 或 "speaker": 1)。	可选
+locales	区域设置列表应与要转录的音频数据的预期区域设置匹配。
+
+如果知道音频文件的地区设置，可以进行指定以提高转录准确性并尽量减少延迟。 如果指定了单个语言区域，将使用该语言区域进行转录。
+
+但是，如果不确定区域，可以指定多个区域以进行语言识别。 候选语言列表越精确，语言识别可能越准确。
+
+如果未指定任何语言区域，语音服务将使用最新的多语言模型来识别语言区域，自动进行转录。
+
+可以通过转录 - 列出支持的语言区域 REST API（API 版本 2024-11-15 或更高版本）获取最新支持的语言。 有关区域设置的详细信息，请参阅“语音服务语言支持”文档。	（可选）但如果你知道预期的区域设置，建议指定该区域设置。
+phraseList	短语列表是提前提供的字词或短语列表，可帮助改进识别。 添加到短语列表的短语具有较高的重要性，从而更有可能被识别。 例如，指定 phraseList":{"phrases":["Contoso","Jessie","Rehaan"]}。 API 版本 2025-10-15 支持短语列表。 有关详细信息，请参阅 使用短语列表提高识别准确性。	可选
+profanityFilterMode	指定如何处理识别结果中的不雅内容。 接受的值为 None（禁用不雅内容筛选）、Masked（将不雅内容替换为星号）、Removed（从结果中删除所有不雅内容）或 Tags（添加不雅内容标记）。 默认值为 Masked。	可选
+相关内容
+快速听录 REST API 参考
+语音转文本支持的语言
+批量听录
+其他资源
+文档
+
+语音转文本概述 - 语音服务 - Foundry Tools
+
+大致了解语音服务的语音转文本功能的优点和功能。
+
+批量听录概述 - 语音服务 - Foundry Tools
+
+如果想要听录存储中的大量音频（例如 Azure Blob），批量听录是理想之选。 然后就可以异步检索听录。
+
+语音转文本快速入门 - Foundry Tools
+
+本快速入门介绍如何使用语音服务进行实时语音转文本的转换。
+
+显示另外 2 个
+培训
+
+模块
+
+使用 Azure 语音服务翻译语音 - Training
+
+使用 Azure 语音服务翻译语音
+
+活动
+
+AI应用与代理开发日
+
+12月31日 21时 - 12月31日 21时
+
+探索AI驱动应用和代理设计的下一步趋势

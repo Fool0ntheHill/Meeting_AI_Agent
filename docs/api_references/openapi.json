@@ -1,0 +1,3140 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Meeting Minutes Agent API",
+    "description": "会议纪要 Agent - 自动生成会议纪要的 AI 服务",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Check",
+        "description": "健康检查端点\n\n检查项:\n- API 服务状态\n- 数据库连接\n- 版本信息\n\nReturns:\n    HealthCheckResponse: 健康状态信息",
+        "operationId": "health_check_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Root",
+        "description": "根端点\n\nReturns:\n    dict: 欢迎信息",
+        "operationId": "root_api_v1__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Create Task",
+        "description": "创建任务\n\n流程:\n1. 验证请求参数\n2. 生成任务 ID\n3. 创建任务记录\n4. 推送到消息队列\n5. 立即返回任务 ID\n\nArgs:\n    request: 创建任务请求\n    user_id: 用户 ID (来自认证)\n    tenant_id: 租户 ID (来自认证)\n    db: 数据库会话\n    queue: 队列管理器\n    \nReturns:\n    CreateTaskResponse: 任务创建响应",
+        "operationId": "create_task_api_v1_tasks_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List Tasks",
+        "description": "列出用户的任务\n\nArgs:\n    limit: 返回数量限制\n    offset: 偏移量\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    List[TaskDetailResponse]: 任务列表",
+        "operationId": "list_tasks_api_v1_tasks_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDetailResponse"
+                  },
+                  "title": "Response List Tasks Api V1 Tasks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/status": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Task Status",
+        "description": "查询任务状态\n\n实现 Cache-Aside 模式:\n1. 先查 Redis 缓存\n2. Cache Miss 则查数据库\n3. 回填缓存(TTL 60秒)\n\nArgs:\n    task_id: 任务 ID\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    redis_client: Redis 客户端(可选)\n    \nReturns:\n    TaskStatusResponse: 任务状态信息\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问",
+        "operationId": "get_task_status_api_v1_tasks__task_id__status_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get Task Detail",
+        "description": "获取任务详情\n\nArgs:\n    task_id: 任务 ID\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    TaskDetailResponse: 任务详细信息\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问",
+        "operationId": "get_task_detail_api_v1_tasks__task_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Delete Task",
+        "description": "删除任务\n\nArgs:\n    task_id: 任务 ID\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问",
+        "operationId": "delete_task_api_v1_tasks__task_id__delete",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/estimate": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Estimate Cost",
+        "description": "预估任务成本\n\nArgs:\n    request: 成本预估请求\n    user_id: 用户 ID (来自认证)\n    \nReturns:\n    EstimateCostResponse: 成本预估结果",
+        "operationId": "estimate_cost_api_v1_tasks_estimate_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateCostRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateCostResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/transcript": {
+      "put": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "Correct Transcript",
+        "description": "修正转写文本\n\n功能:\n1. 验证任务存在且有权限\n2. 保存修正历史(原文本 -> 修正文本)\n3. 更新转写结果\n4. 可选: 重新生成衍生内容\n\nArgs:\n    task_id: 任务 ID\n    request: 修正请求\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    CorrectTranscriptResponse: 修正响应\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问\n    HTTPException: 400 如果任务状态不允许修正",
+        "operationId": "correct_transcript_api_v1_tasks__task_id__transcript_put",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectTranscriptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectTranscriptResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/speakers": {
+      "patch": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "Correct Speakers",
+        "description": "修正说话人映射\n\n功能:\n1. 验证任务存在且有权限\n2. 应用说话人映射修正\n3. 更新转写结果中的说话人标签\n4. 可选: 重新生成衍生内容\n\nArgs:\n    task_id: 任务 ID\n    request: 修正请求\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    CorrectSpeakersResponse: 修正响应\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问\n    HTTPException: 400 如果任务状态不允许修正",
+        "operationId": "correct_speakers_api_v1_tasks__task_id__speakers_patch",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectSpeakersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectSpeakersResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/artifacts/{artifact_type}/regenerate": {
+      "post": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "Regenerate Artifact",
+        "description": "重新生成衍生内容\n\n功能:\n1. 验证任务存在且有权限\n2. 获取最新的转写结果\n3. 使用新的 prompt_instance 生成内容\n4. 创建新版本的衍生内容\n5. 版本号自动递增\n\nArgs:\n    task_id: 任务 ID\n    artifact_type: 衍生内容类型 (meeting_minutes, action_items, summary_notes)\n    request: 生成请求\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    GenerateArtifactResponse: 生成响应\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问\n    HTTPException: 400 如果任务状态不允许重新生成",
+        "operationId": "regenerate_artifact_api_v1_tasks__task_id__artifacts__artifact_type__regenerate_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "artifact_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Type"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateArtifactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateArtifactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/confirm": {
+      "post": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "Confirm Task",
+        "description": "确认任务并归档\n\n功能:\n1. 验证任务存在且有权限\n2. 验证所有必需的确认项都已勾选\n3. 注入责任人水印到衍生内容元数据\n4. 更新任务状态为 ARCHIVED\n5. 记录确认人和确认时间\n\nArgs:\n    task_id: 任务 ID\n    request: 确认请求\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    ConfirmTaskResponse: 确认响应\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问\n    HTTPException: 400 如果确认项未完成或任务状态不允许确认",
+        "operationId": "confirm_task_api_v1_tasks__task_id__confirm_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/artifacts": {
+      "get": {
+        "tags": [
+          "artifacts"
+        ],
+        "summary": "List Artifacts",
+        "description": "列出任务的所有衍生内容(按类型分组)\n\n返回所有类型的衍生内容,每个类型包含所有版本。\n按类型分组,每个类型内按版本降序排列。\n\nArgs:\n    task_id: 任务 ID\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    ListArtifactsResponse: 分组的衍生内容列表\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问",
+        "operationId": "list_artifacts_api_v1_tasks__task_id__artifacts_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListArtifactsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/artifacts/{artifact_type}/versions": {
+      "get": {
+        "tags": [
+          "artifacts"
+        ],
+        "summary": "List Artifact Versions",
+        "description": "列出特定类型的所有版本\n\n返回指定类型的所有版本,按版本号降序排列(最新版本在前)。\n\nArgs:\n    task_id: 任务 ID\n    artifact_type: 衍生内容类型\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    ListArtifactVersionsResponse: 版本列表\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问",
+        "operationId": "list_artifact_versions_api_v1_tasks__task_id__artifacts__artifact_type__versions_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "artifact_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Type"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListArtifactVersionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/artifacts/{artifact_id}": {
+      "get": {
+        "tags": [
+          "artifacts"
+        ],
+        "summary": "Get Artifact Detail",
+        "description": "获取特定版本的详情\n\n返回完整的衍生内容,包括生成的内容、使用的提示词实例等。\n\nArgs:\n    task_id: 任务 ID\n    artifact_id: 衍生内容 ID\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    ArtifactDetailResponse: 衍生内容详情\n    \nRaises:\n    HTTPException: 404 如果任务或衍生内容不存在\n    HTTPException: 403 如果无权访问",
+        "operationId": "get_artifact_detail_api_v1_tasks__task_id__artifacts__artifact_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/artifacts/{artifact_type}/generate": {
+      "post": {
+        "tags": [
+          "artifacts"
+        ],
+        "summary": "Generate Artifact",
+        "description": "生成新版本的衍生内容\n\n使用指定的提示词实例生成新版本的衍生内容。\n版本号自动递增。\n\nArgs:\n    task_id: 任务 ID\n    artifact_type: 衍生内容类型 (meeting_minutes, action_items, summary_notes)\n    request: 生成请求(包含 prompt_instance)\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    GenerateArtifactResponse: 生成响应\n    \nRaises:\n    HTTPException: 404 如果任务不存在\n    HTTPException: 403 如果无权访问\n    HTTPException: 400 如果任务状态不允许生成或类型无效",
+        "operationId": "generate_artifact_api_v1_tasks__task_id__artifacts__artifact_type__generate_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "artifact_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Type"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateArtifactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateArtifactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hotword-sets": {
+      "post": {
+        "tags": [
+          "hotwords"
+        ],
+        "summary": "Create Hotword Set",
+        "description": "创建热词集\n\n功能:\n1. 验证作用域(global/tenant/user)\n2. 读取热词文件内容\n3. 调用火山引擎 API 创建热词库\n4. 获取 BoostingTableID\n5. 保存到数据库\n\nArgs:\n    name: 热词集名称\n    scope: 作用域\n    asr_language: ASR 语言\n    hotwords_file: 热词文件\n    scope_id: 作用域 ID\n    description: 描述\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    CreateHotwordSetResponse: 创建响应\n    \nRaises:\n    HTTPException: 400 如果参数无效\n    HTTPException: 500 如果火山 API 调用失败",
+        "operationId": "create_hotword_set_api_v1_hotword_sets_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_hotword_set_api_v1_hotword_sets_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateHotwordSetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "hotwords"
+        ],
+        "summary": "List Hotword Sets",
+        "description": "列出热词集\n\n功能:\n1. 支持按作用域过滤\n2. 支持按提供商过滤\n3. 支持分页\n\nArgs:\n    scope: 作用域过滤\n    scope_id: 作用域 ID 过滤\n    provider: 提供商过滤\n    limit: 返回数量限制\n    offset: 偏移量\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    ListHotwordSetsResponse: 热词集列表",
+        "operationId": "list_hotword_sets_api_v1_hotword_sets_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "作用域过滤 (global/tenant/user)",
+              "title": "Scope"
+            },
+            "description": "作用域过滤 (global/tenant/user)"
+          },
+          {
+            "name": "scope_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "作用域 ID 过滤",
+              "title": "Scope Id"
+            },
+            "description": "作用域 ID 过滤"
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "提供商过滤 (volcano/azure)",
+              "title": "Provider"
+            },
+            "description": "提供商过滤 (volcano/azure)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "返回数量限制",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "返回数量限制"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "偏移量",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "偏移量"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListHotwordSetsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hotword-sets/{hotword_set_id}": {
+      "get": {
+        "tags": [
+          "hotwords"
+        ],
+        "summary": "Get Hotword Set",
+        "description": "获取热词集详情\n\nArgs:\n    hotword_set_id: 热词集 ID\n    include_preview: 是否包含热词预览\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    HotwordSetInfo: 热词集信息\n    \nRaises:\n    HTTPException: 404 如果热词集不存在",
+        "operationId": "get_hotword_set_api_v1_hotword_sets__hotword_set_id__get",
+        "parameters": [
+          {
+            "name": "hotword_set_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hotword Set Id"
+            }
+          },
+          {
+            "name": "include_preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "是否包含热词预览",
+              "default": false,
+              "title": "Include Preview"
+            },
+            "description": "是否包含热词预览"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotwordSetInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "hotwords"
+        ],
+        "summary": "Update Hotword Set",
+        "description": "更新热词集\n\n功能:\n1. 验证热词集存在\n2. 如果提供了热词文件,调用火山 API 更新\n3. 更新数据库记录\n\nArgs:\n    hotword_set_id: 热词集 ID\n    name: 新名称\n    description: 新描述\n    hotwords_file: 新热词文件\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    UpdateHotwordSetResponse: 更新响应\n    \nRaises:\n    HTTPException: 404 如果热词集不存在\n    HTTPException: 500 如果火山 API 调用失败",
+        "operationId": "update_hotword_set_api_v1_hotword_sets__hotword_set_id__put",
+        "parameters": [
+          {
+            "name": "hotword_set_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hotword Set Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_update_hotword_set_api_v1_hotword_sets__hotword_set_id__put"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateHotwordSetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "hotwords"
+        ],
+        "summary": "Delete Hotword Set",
+        "description": "删除热词集\n\n功能:\n1. 验证热词集存在\n2. 调用火山 API 删除热词库\n3. 删除数据库记录\n\nArgs:\n    hotword_set_id: 热词集 ID\n    user_id: 用户 ID (来自认证)\n    db: 数据库会话\n    \nReturns:\n    DeleteHotwordSetResponse: 删除响应\n    \nRaises:\n    HTTPException: 404 如果热词集不存在\n    HTTPException: 500 如果火山 API 调用失败",
+        "operationId": "delete_hotword_set_api_v1_hotword_sets__hotword_set_id__delete",
+        "parameters": [
+          {
+            "name": "hotword_set_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hotword Set Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteHotwordSetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prompt-templates": {
+      "get": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "List Prompt Templates",
+        "description": "列出所有可用的提示词模板\n\n- 支持按作用域过滤 (global/private)\n- 支持按内容类型过滤\n- 全局模板对所有用户可见\n- 私有模板只对创建者可见",
+        "operationId": "list_prompt_templates_api_v1_prompt_templates_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "作用域过滤 (global/private)",
+              "title": "Scope"
+            },
+            "description": "作用域过滤 (global/private)"
+          },
+          {
+            "name": "artifact_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "内容类型过滤",
+              "title": "Artifact Type"
+            },
+            "description": "内容类型过滤"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "用户 ID (用于查询私有模板)",
+              "title": "User Id"
+            },
+            "description": "用户 ID (用于查询私有模板)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPromptTemplatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "Create Prompt Template",
+        "description": "创建私有提示词模板\n\n- 只能创建私有模板 (scope=private)\n- 模板 ID 自动生成\n- 绑定到创建者的 user_id",
+        "operationId": "create_prompt_template_api_v1_prompt_templates_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "用户 ID (创建者)",
+              "title": "User Id"
+            },
+            "description": "用户 ID (创建者)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromptTemplateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePromptTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prompt-templates/{template_id}": {
+      "get": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "Get Prompt Template",
+        "description": "获取提示词模板详情\n\n- 全局模板对所有用户可见\n- 私有模板只对创建者可见",
+        "operationId": "get_prompt_template_api_v1_prompt_templates__template_id__get",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "用户 ID (用于验证私有模板权限)",
+              "title": "User Id"
+            },
+            "description": "用户 ID (用于验证私有模板权限)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptTemplateDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "Update Prompt Template",
+        "description": "更新私有提示词模板\n\n- 只能更新自己创建的私有模板\n- 不能更新全局模板",
+        "operationId": "update_prompt_template_api_v1_prompt_templates__template_id__put",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "用户 ID (用于验证权限)",
+              "title": "User Id"
+            },
+            "description": "用户 ID (用于验证权限)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePromptTemplateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdatePromptTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "prompt-templates"
+        ],
+        "summary": "Delete Prompt Template",
+        "description": "删除私有提示词模板\n\n- 只能删除自己创建的私有模板\n- 不能删除全局模板",
+        "operationId": "delete_prompt_template_api_v1_prompt_templates__template_id__delete",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "用户 ID (用于验证权限)",
+              "title": "User Id"
+            },
+            "description": "用户 ID (用于验证权限)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePromptTemplateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ArtifactDetailResponse": {
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/GeneratedArtifact",
+            "description": "完整的衍生内容"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artifact"
+        ],
+        "title": "ArtifactDetailResponse",
+        "description": "衍生内容详情响应"
+      },
+      "ArtifactInfo": {
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "artifact_type": {
+            "type": "string",
+            "title": "Artifact Type"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "prompt_instance": {
+            "$ref": "#/components/schemas/PromptInstance"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "task_id",
+          "artifact_type",
+          "version",
+          "prompt_instance",
+          "created_at",
+          "created_by"
+        ],
+        "title": "ArtifactInfo",
+        "description": "衍生内容基本信息"
+      },
+      "Body_create_hotword_set_api_v1_hotword_sets_post": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "热词集名称"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "description": "作用域 (global/tenant/user)"
+          },
+          "asr_language": {
+            "type": "string",
+            "title": "Asr Language",
+            "description": "ASR 语言"
+          },
+          "hotwords_file": {
+            "type": "string",
+            "format": "binary",
+            "title": "Hotwords File",
+            "description": "热词文件 (TXT 格式,每行一个热词)"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id",
+            "description": "作用域 ID"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "描述"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "scope",
+          "asr_language",
+          "hotwords_file"
+        ],
+        "title": "Body_create_hotword_set_api_v1_hotword_sets_post"
+      },
+      "Body_update_hotword_set_api_v1_hotword_sets__hotword_set_id__put": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "新名称"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "新描述"
+          },
+          "hotwords_file": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hotwords File",
+            "description": "新热词文件"
+          }
+        },
+        "type": "object",
+        "title": "Body_update_hotword_set_api_v1_hotword_sets__hotword_set_id__put"
+      },
+      "ConfirmTaskRequest": {
+        "properties": {
+          "confirmation_items": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Confirmation Items",
+            "description": "确认项状态 (key_conclusions, responsible_persons, etc.)"
+          },
+          "responsible_person": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Responsible Person",
+            "description": "责任人信息 (id, name)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation_items",
+          "responsible_person"
+        ],
+        "title": "ConfirmTaskRequest",
+        "description": "确认任务请求",
+        "example": {
+          "confirmation_items": {
+            "action_items": true,
+            "key_conclusions": true,
+            "responsible_persons": true
+          },
+          "responsible_person": {
+            "id": "user_001",
+            "name": "张三"
+          }
+        }
+      },
+      "ConfirmTaskResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "confirmed_by": {
+            "type": "string",
+            "title": "Confirmed By"
+          },
+          "confirmed_by_name": {
+            "type": "string",
+            "title": "Confirmed By Name"
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Confirmed At"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "任务已确认并归档"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "task_id",
+          "state",
+          "confirmed_by",
+          "confirmed_by_name",
+          "confirmed_at"
+        ],
+        "title": "ConfirmTaskResponse",
+        "description": "确认任务响应"
+      },
+      "CorrectSpeakersRequest": {
+        "properties": {
+          "speaker_mapping": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Speaker Mapping",
+            "description": "说话人标签映射 (原标签 -> 新名称)"
+          },
+          "regenerate_artifacts": {
+            "type": "boolean",
+            "title": "Regenerate Artifacts",
+            "description": "是否重新生成衍生内容",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "speaker_mapping"
+        ],
+        "title": "CorrectSpeakersRequest",
+        "description": "修正说话人映射请求",
+        "example": {
+          "regenerate_artifacts": true,
+          "speaker_mapping": {
+            "Speaker 0": "张三",
+            "Speaker 1": "李四"
+          }
+        }
+      },
+      "CorrectSpeakersResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "说话人映射已修正"
+          },
+          "regenerated_artifacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regenerated Artifacts",
+            "description": "重新生成的衍生内容 ID 列表"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "CorrectSpeakersResponse",
+        "description": "修正说话人映射响应"
+      },
+      "CorrectTranscriptRequest": {
+        "properties": {
+          "corrected_text": {
+            "type": "string",
+            "title": "Corrected Text",
+            "description": "修正后的完整文本"
+          },
+          "regenerate_artifacts": {
+            "type": "boolean",
+            "title": "Regenerate Artifacts",
+            "description": "是否重新生成衍生内容",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "corrected_text"
+        ],
+        "title": "CorrectTranscriptRequest",
+        "description": "修正转写文本请求",
+        "example": {
+          "corrected_text": "修正后的会议转写文本...",
+          "regenerate_artifacts": true
+        }
+      },
+      "CorrectTranscriptResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "转写文本已修正"
+          },
+          "regenerated_artifacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regenerated Artifacts",
+            "description": "重新生成的衍生内容 ID 列表"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "CorrectTranscriptResponse",
+        "description": "修正转写文本响应"
+      },
+      "CreateHotwordSetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "hotword_set_id": {
+            "type": "string",
+            "title": "Hotword Set Id"
+          },
+          "boosting_table_id": {
+            "type": "string",
+            "title": "Boosting Table Id"
+          },
+          "word_count": {
+            "type": "integer",
+            "title": "Word Count"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "热词集已创建"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "hotword_set_id",
+          "boosting_table_id",
+          "word_count"
+        ],
+        "title": "CreateHotwordSetResponse",
+        "description": "创建热词集响应"
+      },
+      "CreatePromptTemplateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "模板标题"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "模板描述"
+          },
+          "prompt_body": {
+            "type": "string",
+            "title": "Prompt Body",
+            "description": "提示词正文(含占位符)"
+          },
+          "artifact_type": {
+            "type": "string",
+            "title": "Artifact Type",
+            "description": "生成内容类型"
+          },
+          "supported_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Languages",
+            "description": "支持的语言列表",
+            "default": [
+              "zh-CN"
+            ]
+          },
+          "parameter_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameter Schema",
+            "description": "参数定义"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "prompt_body",
+          "artifact_type",
+          "parameter_schema"
+        ],
+        "title": "CreatePromptTemplateRequest",
+        "description": "创建提示词模板请求",
+        "example": {
+          "artifact_type": "meeting_minutes",
+          "description": "适用于技术团队的会议纪要",
+          "parameter_schema": {
+            "meeting_description": {
+              "default": "",
+              "description": "会议描述信息",
+              "required": false,
+              "type": "string"
+            }
+          },
+          "prompt_body": "你是一个专业的会议纪要助手。\n\n会议信息:\n{meeting_description}\n\n请生成技术导向的会议纪要...",
+          "supported_languages": [
+            "zh-CN",
+            "en-US"
+          ],
+          "title": "我的自定义会议纪要模板"
+        }
+      },
+      "CreatePromptTemplateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "template_id": {
+            "type": "string",
+            "title": "Template Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "提示词模板已创建"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "template_id"
+        ],
+        "title": "CreatePromptTemplateResponse",
+        "description": "创建提示词模板响应"
+      },
+      "CreateTaskRequest": {
+        "properties": {
+          "audio_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Audio Files",
+            "description": "音频文件 URL 列表"
+          },
+          "file_order": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Order",
+            "description": "文件排序索引"
+          },
+          "meeting_type": {
+            "type": "string",
+            "title": "Meeting Type",
+            "description": "会议类型"
+          },
+          "asr_language": {
+            "type": "string",
+            "title": "Asr Language",
+            "description": "ASR 识别语言",
+            "default": "zh-CN+en-US"
+          },
+          "output_language": {
+            "type": "string",
+            "title": "Output Language",
+            "description": "输出语言",
+            "default": "zh-CN"
+          },
+          "prompt_instance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptInstance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "提示词实例"
+          },
+          "skip_speaker_recognition": {
+            "type": "boolean",
+            "title": "Skip Speaker Recognition",
+            "description": "跳过说话人识别",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_files",
+          "meeting_type"
+        ],
+        "title": "CreateTaskRequest",
+        "description": "创建任务请求",
+        "example": {
+          "asr_language": "zh-CN+en-US",
+          "audio_files": [
+            "https://tos.example.com/meeting.wav"
+          ],
+          "file_order": [
+            0
+          ],
+          "meeting_type": "weekly_sync",
+          "output_language": "zh-CN",
+          "prompt_instance": {
+            "language": "zh-CN",
+            "parameters": {
+              "meeting_description": "产品规划会议"
+            },
+            "template_id": "tpl_001"
+          },
+          "skip_speaker_recognition": false
+        }
+      },
+      "CreateTaskResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "任务已创建"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "task_id"
+        ],
+        "title": "CreateTaskResponse",
+        "description": "创建任务响应"
+      },
+      "DeleteHotwordSetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "热词集已删除"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "DeleteHotwordSetResponse",
+        "description": "删除热词集响应"
+      },
+      "DeletePromptTemplateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "提示词模板已删除"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "DeletePromptTemplateResponse",
+        "description": "删除提示词模板响应"
+      },
+      "EstimateCostRequest": {
+        "properties": {
+          "audio_duration": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Audio Duration",
+            "description": "音频时长(秒)"
+          },
+          "meeting_type": {
+            "type": "string",
+            "title": "Meeting Type",
+            "description": "会议类型"
+          },
+          "enable_speaker_recognition": {
+            "type": "boolean",
+            "title": "Enable Speaker Recognition",
+            "description": "是否启用说话人识别",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_duration",
+          "meeting_type"
+        ],
+        "title": "EstimateCostRequest",
+        "description": "成本预估请求"
+      },
+      "EstimateCostResponse": {
+        "properties": {
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost",
+            "description": "总成本(元)"
+          },
+          "cost_breakdown": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Cost Breakdown",
+            "description": "成本拆分"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_cost",
+          "cost_breakdown"
+        ],
+        "title": "EstimateCostResponse",
+        "description": "成本预估响应",
+        "example": {
+          "cost_breakdown": {
+            "asr": 0.3,
+            "llm": 0.4,
+            "voiceprint": 0.15
+          },
+          "total_cost": 0.85
+        }
+      },
+      "GenerateArtifactRequest": {
+        "properties": {
+          "prompt_instance": {
+            "$ref": "#/components/schemas/PromptInstance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_instance"
+        ],
+        "title": "GenerateArtifactRequest",
+        "description": "生成衍生内容请求",
+        "example": {
+          "prompt_instance": {
+            "language": "zh-CN",
+            "parameters": {
+              "meeting_description": "产品规划会议"
+            },
+            "template_id": "tpl_001"
+          }
+        }
+      },
+      "GenerateArtifactResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "content": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Content"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "内容已生成"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "artifact_id",
+          "version",
+          "content"
+        ],
+        "title": "GenerateArtifactResponse",
+        "description": "生成衍生内容响应"
+      },
+      "GeneratedArtifact": {
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id",
+            "description": "内容唯一标识"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id",
+            "description": "关联的任务 ID"
+          },
+          "artifact_type": {
+            "type": "string",
+            "title": "Artifact Type",
+            "description": "内容类型(meeting_minutes/action_items/summary_notes)"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "description": "版本号"
+          },
+          "prompt_instance": {
+            "$ref": "#/components/schemas/PromptInstance",
+            "description": "使用的提示词实例"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "生成的内容(JSON 字符串,前端需 JSON.parse 解析)"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "额外元数据(如 grounding_metadata)"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By",
+            "description": "创建者"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "task_id",
+          "artifact_type",
+          "version",
+          "prompt_instance",
+          "content",
+          "created_by"
+        ],
+        "title": "GeneratedArtifact",
+        "description": "会议衍生内容\n\n设计说明:\n- content 字段类型为 str,存储 JSON 序列化后的字符串\n- 优势: 灵活支持不同类型的 artifact,数据库存储统一\n- 前端使用: 接收后使用 JSON.parse() 解析\n- 后端使用: 提供 get_meeting_minutes() 等辅助方法解析为强类型对象",
+        "example": {
+          "artifact_id": "art_001",
+          "artifact_type": "meeting_minutes",
+          "content": "{\"title\": \"产品规划会议\", \"participants\": [\"张三\", \"李四\"], \"summary\": \"讨论了 Q2 产品路线图\", \"key_points\": [], \"action_items\": []}",
+          "created_by": "user_456",
+          "prompt_instance": {
+            "language": "zh-CN",
+            "parameters": {
+              "meeting_description": "会议标题: 产品规划会议"
+            },
+            "template_id": "tpl_001"
+          },
+          "task_id": "task_123",
+          "version": 1
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthCheckResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "服务状态"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "版本号"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "检查时间"
+          },
+          "dependencies": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Dependencies",
+            "description": "依赖服务状态"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "timestamp",
+          "dependencies"
+        ],
+        "title": "HealthCheckResponse",
+        "description": "健康检查响应",
+        "example": {
+          "dependencies": {
+            "database": "healthy",
+            "redis": "healthy",
+            "volcano_asr": "healthy"
+          },
+          "status": "healthy",
+          "timestamp": "2026-01-14T10:00:00Z",
+          "version": "1.0.0"
+        }
+      },
+      "HotwordSetInfo": {
+        "properties": {
+          "hotword_set_id": {
+            "type": "string",
+            "title": "Hotword Set Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "provider_resource_id": {
+            "type": "string",
+            "title": "Provider Resource Id"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "asr_language": {
+            "type": "string",
+            "title": "Asr Language"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
+          },
+          "word_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Size"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hotword_set_id",
+          "name",
+          "provider",
+          "provider_resource_id",
+          "scope",
+          "scope_id",
+          "asr_language",
+          "description",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "HotwordSetInfo",
+        "description": "热词集信息"
+      },
+      "ListArtifactVersionsResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id",
+            "description": "任务 ID"
+          },
+          "artifact_type": {
+            "type": "string",
+            "title": "Artifact Type",
+            "description": "衍生内容类型"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactInfo"
+            },
+            "type": "array",
+            "title": "Versions",
+            "description": "版本列表"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count",
+            "description": "版本总数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "artifact_type",
+          "versions",
+          "total_count"
+        ],
+        "title": "ListArtifactVersionsResponse",
+        "description": "列出特定类型的所有版本响应"
+      },
+      "ListArtifactsResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id",
+            "description": "任务 ID"
+          },
+          "artifacts_by_type": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/ArtifactInfo"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Artifacts By Type",
+            "description": "按类型分组的衍生内容"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count",
+            "description": "总数量"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "artifacts_by_type",
+          "total_count"
+        ],
+        "title": "ListArtifactsResponse",
+        "description": "列出衍生内容响应(按类型分组)"
+      },
+      "ListHotwordSetsResponse": {
+        "properties": {
+          "hotword_sets": {
+            "items": {
+              "$ref": "#/components/schemas/HotwordSetInfo"
+            },
+            "type": "array",
+            "title": "Hotword Sets"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hotword_sets",
+          "total"
+        ],
+        "title": "ListHotwordSetsResponse",
+        "description": "列出热词集响应"
+      },
+      "ListPromptTemplatesResponse": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/PromptTemplate"
+            },
+            "type": "array",
+            "title": "Templates",
+            "description": "提示词模板列表"
+          }
+        },
+        "type": "object",
+        "required": [
+          "templates"
+        ],
+        "title": "ListPromptTemplatesResponse",
+        "description": "列出提示词模板响应"
+      },
+      "PromptInstance": {
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "title": "Template Id",
+            "description": "模板 ID"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "description": "语言",
+            "default": "zh-CN"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters",
+            "description": "参数值"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_id"
+        ],
+        "title": "PromptInstance",
+        "description": "提示词实例",
+        "example": {
+          "language": "zh-CN",
+          "parameters": {
+            "meeting_description": "会议标题: 产品规划会议\n会议主题: Q2 产品路线图讨论\n关注重点: 重点关注用户反馈和竞品分析"
+          },
+          "template_id": "tpl_001"
+        }
+      },
+      "PromptTemplate": {
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "title": "Template Id",
+            "description": "模板唯一标识"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "模板标题"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "用户可读说明"
+          },
+          "prompt_body": {
+            "type": "string",
+            "title": "Prompt Body",
+            "description": "提示词正文(含占位符,如 {meeting_description})"
+          },
+          "artifact_type": {
+            "type": "string",
+            "title": "Artifact Type",
+            "description": "生成内容类型(meeting_minutes/action_items/summary_notes)"
+          },
+          "supported_languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Languages",
+            "description": "支持的语言列表",
+            "default": [
+              "zh-CN",
+              "en-US"
+            ]
+          },
+          "parameter_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameter Schema",
+            "description": "参数定义(参数名 -> {type, required, default})"
+          },
+          "is_system": {
+            "type": "boolean",
+            "title": "Is System",
+            "description": "是否为系统预置模板",
+            "default": true
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "description": "作用域(global/private)",
+            "default": "global"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id",
+            "description": "作用域 ID(user_id)"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_id",
+          "title",
+          "description",
+          "prompt_body",
+          "artifact_type",
+          "parameter_schema"
+        ],
+        "title": "PromptTemplate",
+        "description": "提示词模板",
+        "example": {
+          "artifact_type": "meeting_minutes",
+          "description": "生成包含摘要、关键要点和行动项的标准会议纪要",
+          "is_system": true,
+          "parameter_schema": {
+            "meeting_description": {
+              "default": "",
+              "description": "会议描述信息",
+              "required": false,
+              "type": "string"
+            }
+          },
+          "prompt_body": "你是一个专业的会议纪要助手。\n\n会议信息:\n{meeting_description}\n\n请根据以下会议转写生成纪要...",
+          "supported_languages": [
+            "zh-CN",
+            "en-US"
+          ],
+          "template_id": "tpl_001",
+          "title": "标准会议纪要"
+        }
+      },
+      "PromptTemplateDetailResponse": {
+        "properties": {
+          "template": {
+            "$ref": "#/components/schemas/PromptTemplate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "title": "PromptTemplateDetailResponse",
+        "description": "提示词模板详情响应"
+      },
+      "TaskDetailResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "meeting_type": {
+            "type": "string",
+            "title": "Meeting Type"
+          },
+          "audio_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Audio Files"
+          },
+          "file_order": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "File Order"
+          },
+          "asr_language": {
+            "type": "string",
+            "title": "Asr Language"
+          },
+          "output_language": {
+            "type": "string",
+            "title": "Output Language"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TaskState"
+          },
+          "progress": {
+            "type": "number",
+            "title": "Progress"
+          },
+          "error_details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Details"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "user_id",
+          "tenant_id",
+          "meeting_type",
+          "audio_files",
+          "file_order",
+          "asr_language",
+          "output_language",
+          "state",
+          "progress",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TaskDetailResponse",
+        "description": "任务详情响应"
+      },
+      "TaskState": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "queued",
+          "running",
+          "transcribing",
+          "identifying",
+          "correcting",
+          "summarizing",
+          "success",
+          "failed",
+          "partial_success"
+        ],
+        "title": "TaskState",
+        "description": "任务状态枚举"
+      },
+      "TaskStatusResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TaskState"
+          },
+          "progress": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "description": "进度百分比"
+          },
+          "estimated_time": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Time",
+            "description": "预计剩余时间(秒)"
+          },
+          "error_details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Details"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "state",
+          "progress",
+          "updated_at"
+        ],
+        "title": "TaskStatusResponse",
+        "description": "任务状态响应"
+      },
+      "UpdateHotwordSetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "word_count": {
+            "type": "integer",
+            "title": "Word Count"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "热词集已更新"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "word_count"
+        ],
+        "title": "UpdateHotwordSetResponse",
+        "description": "更新热词集响应"
+      },
+      "UpdatePromptTemplateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "模板标题"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "模板描述"
+          },
+          "prompt_body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Body",
+            "description": "提示词正文"
+          },
+          "supported_languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supported Languages",
+            "description": "支持的语言列表"
+          },
+          "parameter_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameter Schema",
+            "description": "参数定义"
+          }
+        },
+        "type": "object",
+        "title": "UpdatePromptTemplateRequest",
+        "description": "更新提示词模板请求"
+      },
+      "UpdatePromptTemplateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "提示词模板已更新"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "UpdatePromptTemplateResponse",
+        "description": "更新提示词模板响应"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

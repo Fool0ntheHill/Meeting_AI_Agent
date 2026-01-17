@@ -1,0 +1,786 @@
+<span id="b1adc5e0"></span>
+# 更新日志 ChangeLog:
+<span id="0e0feb9a"></span>
+## v1.0
+
+* 加入了多个热词管理模块的POST请求 | Added multiple new POST requests as part of the "Boosting Table API"
+
+
+<span id="8631ae59"></span>
+# 热词管理API | Hotword API (ALL For Application)
+
+> 1. 访问鉴权
+>    1. 鉴权方式说明 https://www.volcengine.com/docs/6369/67268
+>       1. 线上请求地址域名 open.volcengineapi.com
+>       2. 固定公共参数
+
+> ```Python
+Region "cn-north-1"
+Service "speech_saas_prod"
+Version "2022-08-30"
+```
+
+
+>       3. AKSK获取 https://console.volcengine.com/iam/keymanage/
+>       4. 结合文档内api说明调用`ListApplications` `ListBoostingTable` 的例子(*其他语言和使用sdk调用的方式请参考火山鉴权源码[说明](https://www.volcengine.com/docs/6369/185600) 一)
+
+> ```Python
+import binascii
+import datetime
+import hashlib
+import hmac
+import json
+import requests
+import urllib
+
+domain = "open.volcengineapi.com"
+region = "cn-north-1"
+service = "speech_saas_prod"
+contentType = "application/json; charset=utf-8"
+
+def list_application(account_id: str, ak: str, sk: str) -> requests.Response:
+    params = {
+        "Action": "ListApplications",
+        "Version": "2021-11-22",
+        "X-Account-Id": account_id,
+    }
+    canonicalQueryString = get_canonical_query_string(params)
+    print(canonicalQueryString)
+    url = "https://" + domain + "/?" + canonicalQueryString
+    payloadSign = get_hmac_encode16("")
+    headers = get_hashmac_headers(
+        domain,
+        region,
+        service,
+        canonicalQueryString,
+        "GET",
+        "/",
+        contentType,
+        payloadSign,
+        ak,
+        sk,
+    )
+
+    submit_resp = requests.get(url=url, headers=headers)
+    return submit_resp
+
+def list_hotword_table(
+    app_id: int,
+    ak: str,
+    sk: str,
+) -> requests.Response:
+    params_body = {
+        "Action": "ListBoostingTable",
+        "Version": "2022-08-30",
+        "AppID": app_id,
+        "PageNumber": 1,
+        "PageSize": 10,
+        "PreviewSize": 10,
+    }
+    canonical_query_string = "Action=ListBoostingTable&Version=2022-08-30"
+    url = "https://" + domain + "/?" + canonical_query_string
+    content_type = "application/json; charset=utf-8"
+    payload_sign = get_hmac_encode16(json.dumps(params_body))
+    headers = get_hashmac_headers(
+        domain,
+        region,
+        service,
+        canonical_query_string,
+        "POST",
+        "/",
+        content_type,
+        payload_sign,
+        ak,
+        sk,
+    )
+
+    submit_resp = requests.post(url=url, headers=headers, data=json.dumps(params_body))
+    return submit_resp
+
+def get_canonical_query_string(param_dict):
+    target = sorted(param_dict.items(), key=lambda x: x[0], reverse=False)
+    canonicalQueryString = urllib.parse.urlencode(target)
+    return canonicalQueryString
+
+def get_hmac_encode16(data):
+    return binascii.b2a_hex(hashlib.sha256(data.encode("utf-8")).digest()).decode(
+        "ascii"
+    )
+
+def get_volc_signature(secret_key, data):
+    return hmac.new(secret_key, data.encode("utf-8"), digestmod=hashlib.sha256).digest()
+
+def get_hashmac_headers(
+    domain,
+    region,
+    service,
+    canonicalquerystring,
+    httprequestmethod,
+    canonicaluri,
+    contenttype,
+    payloadsign,
+    ak,
+    sk,
+):
+    utc_time_sencond = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    utc_time_day = datetime.datetime.utcnow().strftime("%Y%m%d")
+    credentialScope = utc_time_day + "/" + region + "/" + service + "/request"
+    headers = {
+        "content-type": contenttype,
+        "x-date": utc_time_sencond,
+    }
+    canonicalHeaders = (
+        "content-type:"
+        + contenttype
+        + "\n"
+        + "host:"
+        + domain
+        + "\n"
+        + "x-content-sha256:"
+        + "\n"
+        + "x-date:{}".format(utc_time_sencond)
+        + "\n"
+    )
+    signedHeaders = "content-type;host;x-content-sha256;x-date"
+    canonicalRequest = (
+        httprequestmethod
+        + "\n"
+        + canonicaluri
+        + "\n"
+        + canonicalquerystring
+        + "\n"
+        + canonicalHeaders
+        + "\n"
+        + signedHeaders
+        + "\n"
+        + payloadsign
+    )
+    stringToSign = (
+        "HMAC-SHA256"
+        + "\n"
+        + utc_time_sencond
+        + "\n"
+        + credentialScope
+        + "\n"
+        + get_hmac_encode16(canonicalRequest)
+    )
+    signingkey = get_volc_signature(
+        get_volc_signature(
+            get_volc_signature(
+                get_volc_signature(sk.encode("utf-8"), utc_time_day), region
+            ),
+            service,
+        ),
+        "request",
+    )
+    signature = binascii.b2a_hex(get_volc_signature(signingkey, stringToSign)).decode(
+        "ascii"
+    )
+    headers[
+        "Authorization"
+    ] = "HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}".format(
+        ak, credentialScope, signedHeaders, signature
+    )
+    return headers
+
+if __name__ == "__main__":
+    print(
+        json.dumps(
+            list_hotword_table(
+                app_id=0,
+                ak="",
+                sk="",
+            ).text
+        )
+    )
+    print(
+        json.dumps(
+            list_application(
+                account_id="",
+                ak="",
+                sk="",
+            ).text
+        )
+    )
+```
+
+
+
+
+> 2. 错误码
+
+> HTTP **status code not starting with 2xx** is considered an **error**;
+> **Detailed Info** is listed inside the HTTP response body as
+> ```
+> {
+>     "ResponseMetadata": {
+>         ...
+>         "Error": {
+>             "Code": "xxx",
+>             "Message": "xxx"
+>         }
+>     }
+> }
+> ```
+> **"ResponseMetadata.Error.Code"** **CAN** be safely used by client to check error type if any
+
+<span id="cd077076"></span>
+## List User's Applications
+<span id="29e62aad"></span>
+### Views
+<div style="text-align: center"><img src="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/5e7bd8b603434d508e46199498457b5f~tplv-goo7wpa0wc-image.image" width="612px" /></div>
+
+<span id="a93b5a5d"></span>
+### Request
+**Method: GET**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Action |string |Y |query |ListApplications |
+| | | | | | \
+|Version |string |Y |query |2021-11-22 |
+
+<span id="83a5e462"></span>
+### Response
+```JSON
+ {
+  "status": "success",
+  "error": null,
+  "data": {
+    "applications": [
+      {
+        "id": 86,
+        "appid": "10004829",
+        "top_account_id": "2100000839",
+        "name": "test_lmy123123",
+        "description": "Test_lmy111",
+        "service_tree_node": "113953",
+        "service_tree_path": "|AI-Lab|Speech|PLATFORM|SaaS",
+        "created_timestamp": 1631093359000,
+        "system": "volcengine",
+        "state": "accepted",
+        "deactivated": false,
+        "alert_user_emails": null,
+        "accepted": true,
+        "state_comment": "",
+        "user_permissions": [
+          "admin"
+        ],
+        "modification": {},
+        "workflow_id": ""
+      },
+      {
+        "id": 88,
+        "appid": "10004830",
+        "top_account_id": "2100000839",
+        "name": "test_lmy123123123",
+        "description": "1",
+        "service_tree_node": "113953",
+        "service_tree_path": "|AI-Lab|Speech|PLATFORM|SaaS",
+        "created_timestamp": 1631095608000,
+        "system": "volcengine",
+        "state": "accepted",
+        "deactivated": false,
+        "alert_user_emails": null,
+        "accepted": true,
+        "state_comment": "",
+        "user_permissions": [
+          "admin"
+        ],
+        "modification": {},
+        "workflow_id": ""
+      },
+      {
+        "id": 89,
+        "appid": "10004831",
+        "top_account_id": "2100000839",
+        "name": "test1111",
+        "description": "1",
+        "service_tree_node": "113953",
+        "service_tree_path": "|AI-Lab|Speech|PLATFORM|SaaS",
+        "created_timestamp": 1631096047000,
+        "system": "volcengine",
+        "state": "accepted",
+        "deactivated": false,
+        "alert_user_emails": null,
+        "accepted": true,
+        "state_comment": "",
+        "user_permissions": [
+          "admin"
+        ],
+        "modification": {},
+        "workflow_id": ""
+      }
+    ]
+  }
+}
+```
+
+<span id="4d331161"></span>
+## List Boosting Table Limits
+<span id="ad271f65"></span>
+### Views
+
+* For listing limits of boosting table itself and total count
+
+<div style="text-align: center"><img src="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/59ab6052682c47d8bfbe707a5d69f5d1~tplv-goo7wpa0wc-image.image" width="562px" /></div>
+
+<span id="118a2b75"></span>
+### Request
+**Method: POST**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Content-Type |string |Y |header |application/json; charset=utf-8 |
+| | | | | | \
+|Action |string |Y |body |ListBoostingTableLimits |
+| | | | | | \
+|Version |string |Y |body |2022-08-30 |
+| | | | | | \
+|AppID |int |Y |body |AppID of application |
+
+<span id="02b1198b"></span>
+### Response
+```JSON
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "ListBoostingTableLimits",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}" //header中的X-Top-Region参数
+    },
+    "Result":{
+            "AppID": "xxx",
+            "SingleTableSizeLimit": 1000, // 单个词表词数量限制
+            "SingleWordSizeLimit": 10, // 单个单词限制
+            "SingleWordSizeLimitBytes": 30,
+            "SingleWordSizeLimitCN": 10,
+            "TotalSizeLimit": 5000, // 单个用户所有词表总和词数量限制
+            "TotalSizeLimitBytes": 5000,
+            "TotalSizeLimitCN": 1666,
+            "TotalTableCountLimit": 10, // 词表数量限制
+            "CurTotalTableCount": 0, // 当前用户词表数量
+            "CurTotalSize": 0, // 当前用户所有词表单词总量
+            "CurTotalSizeBytes": 0,
+            "CurTotalSizeCN": 0
+    }
+}
+```
+
+<span id="fd14ee21"></span>
+## Create Boosting Table (file size < 8 MB)
+<span id="0f5621c0"></span>
+### Views
+![Image](https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/39d5f6bf3bea4cb29432dab4a5224bd9~tplv-goo7wpa0wc-image.image =278x)
+<span id="40f90d91"></span>
+### Request
+**Method: POST**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Content-Type |string |Y |header |multipart/form-data; charset=utf-8 |
+| | | | | | \
+|Action |string |Y |body |CreateBoostingTable |
+| | | | | | \
+|Version |string |Y |body |2022-08-30 |
+| | | | | | \
+|AppID |int |Y |body |AppID of application |
+| | | | | | \
+|BoostingTableName |string |Y |body |Name of the table |
+| | | | | | \
+|File |file |Y |body |Contents of the TXT file; no larger than 8MB; name of the file will be ignored; |
+
+<span id="10f83033"></span>
+### Response
+```JSON
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "CreateBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}" //header中的X-Top-Region参数
+    },
+    "Result":{
+        "AppID": "xxx",
+        "BoostingTableID" : "xxx",
+        "BoostingTableName" : "xxx",
+        "CreateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+        "UpdateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+        "WordSize": 1998,         // the total word size
+        "WordCount": 999       // the line of word
+    }
+}
+```
+
+```JSON
+// 400 Bad Request
+// MissBoostingFile
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "CreateBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}", //header中的X-Top-Region参数
+        "Error": {
+            "Code": "MissingParameter.MissBoostingFile",
+            "Message": "The specified parameter MissBoostingFile is missing: xxx"
+        }
+    }
+}
+```
+
+```JSON
+// 400 Bad Request
+// BoostingNameDuplicated
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "UpdateBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}", //header中的X-Top-Region参数
+        "Error": {
+            "Code": "InvalidParameter.BoostingNameDuplicated",
+            "Message": "The specified parameter BoostingTableName is invalid: xxx"
+        }
+    }
+}
+```
+
+```JSON
+// 403 Forbidden
+// ExceedTotalTableCount
+// ExceedSingleWoldSize
+// ExceedSingleTableSize
+// ExceedTotalSize
+// BoostingTableWrongFormat
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "UpdateBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}", //header中的X-Top-Region参数
+        "Error": {
+            "Code": "OperationDenied.xxxxxx",
+            "Message": "Operation denied because exceeding xxx: xxx"
+        }
+    }
+}
+```
+
+示例demo：
+<Attachment link="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/0bc7203071fc45709a0bb35e8b0e2c22~tplv-goo7wpa0wc-image.image" name="createboostingtable.py" ></Attachment>
+
+<span id="87b5e4e5"></span>
+## Check Boosting Table Name
+<span id="d71e9d32"></span>
+### Description
+判断同一appid下词表名是否重复 | Check if the given table name already exists for the same appid
+<span id="60791487"></span>
+### Views
+<div style="text-align: center"><img src="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/e5a608a9fb274efc94ec4a7953a3f440~tplv-goo7wpa0wc-image.image" width="610px" /></div>
+
+<span id="73697878"></span>
+### Request
+**Method: POST**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |\
+| | | |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Content-Type |string |Y |header |application/json; charset=utf-8 |
+| | | | | | \
+|Action |string |Y |body |CheckBoostingTableName |
+| | | | | | \
+|Version |string |Y |body |2022-08-30 |
+| | | | | | \
+|AppID |int |Y |body |AppID of application |
+| | | | | | \
+|BoostingTableName |string |Y |body |Name of the table |
+
+<span id="31301dbf"></span>
+### Response
+```JSON
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "CheckBoostingTableName",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}" //header中的X-Top-Region参数
+    },
+    "Result":{
+        "Message": "success" // 2xx status code is a success; message not important
+    }
+    true
+}
+```
+
+```JSON
+// 200 OK
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "CheckBoostingTableName",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}", //header中的X-Top-Region参数
+        "Error": {
+            "Code": "InvalidParameter.BoostingNameDuplicated",
+            "Message": "The specified parameter BoostingTableName is invalid"
+        }
+    },
+        "Result":false
+}
+```
+
+<span id="7ca92ad8"></span>
+## Update Boosting Table (< 8 MB)
+<span id="c29e6f7a"></span>
+### Views
+<div style="text-align: center"><img src="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/85fd2cbbd1a04b9888bb5b8a45a97b29~tplv-goo7wpa0wc-image.image" width="604px" /></div>
+
+<span id="4d7a0eb3"></span>
+### Request
+**Method: POST**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Content-Type |string |Y |header |multipart/form-data; charset=utf-8 |
+| | | | | | \
+|Action |string |Y |body |UpdateBoostingTable |
+| | | | | | \
+|Version |string |Y |body |2022-08-30 |
+| | | | | | \
+|AppID |int |Y |body |AppID of application |
+| | | | | | \
+|BoostingTableID |string |Y |body |ID of boosting table |
+| | | | | | \
+|BoostingTableName |string |N |body |Name of the table, update if not empty |
+| | | | | | \
+|File |string |Y |body |Contents of the TXT file; no larger than 8MB; |
+
+<span id="905990f2"></span>
+### Response
+```JSON
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "UpdateBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}" //header中的X-Top-Region参数
+    },
+    "Result":{
+        "AppID": "xxx",
+        "BoostingTableID" : "xxx",
+        "BoostingTableName" : "xxx",
+        "CreateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+        "UpdateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+        "WordSize": 1998,         // the total_word size
+        "WordCount": 999       // the line of word
+    }
+}
+```
+
+> Update Boosting Table has **ALL** possible error codes and messages that
+> **Create Boosting Table** and **Delete Boosting Table** have
+
+<span id="15666972"></span>
+## Delete Boosting Table
+<span id="21bbb837"></span>
+### Views
+<div style="text-align: center"><img src="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/bae06059210646a688433cad86cf981a~tplv-goo7wpa0wc-image.image" width="618px" /></div>
+
+<span id="9a5d04b0"></span>
+### Request
+**Method: POST**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Content-Type |string |Y |header |application/json; charset=utf-8 |
+| | | | | | \
+|Action |string |Y |body |DeleteBoostingTable |
+| | | | | | \
+|Version |string |Y |body |2022-08-30 |
+| | | | | | \
+|AppID |int |Y |body |AppID of application |
+| | | | | | \
+|BoostingTableID |string |Y |body |ID of boosting table |
+
+<span id="68c1bc4a"></span>
+### Response
+```JSON
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "DeleteBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}" //header中的X-Top-Region参数
+    },
+    "Result":{
+        "Message": "success" // 2xx status code is a success; message not important
+    }
+}
+```
+
+```JSON
+// 404 NotFound
+// BoostingTableNotFound
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "UpdateBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}", //header中的X-Top-Region参数
+        "Error": {
+            "Code": "OperationDenied.BoostingTableNotFound",
+            "Message": "Operation is denied because boosting table not found: xxx"
+        }
+    }
+}
+```
+
+<span id="bfe30bd8"></span>
+## List Boosting Table
+<span id="e214c3ec"></span>
+### Views
+<div style="text-align: center"><img src="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/9d275bcfae484a9c96269ea9e0e42b31~tplv-goo7wpa0wc-image.image" width="656px" /></div>
+
+<span id="814b04a5"></span>
+### Request
+**Method: POST**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Content-Type |string |Y |header |application/json; charset=utf-8 |
+| | | | | | \
+|Action |string |Y |body |ListBoostingTable |
+| | | | | | \
+|Version |string |Y |body |2022-08-30 |
+| | | | | | \
+|AppID |int |Y |body |AppID of application |
+| | | | | | \
+|PageNumber |int | |body |Page number; default to 1; invalid value returns empty result |
+| | | | | | \
+|PageSize |int | |body |Page size, default to 10; invalid value returns empty result |
+| | | | | | \
+|PreviewSize |int | |body |Number of boosting words to preview, default to 10 |
+
+<span id="fa9456a7"></span>
+### Response
+```JSON
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "ListBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}" //header中的X-Top-Region参数
+    },
+    "Result":{
+        "AppID": "xxx",
+        "BoostingTableCount": 1,
+        "BoostingTables": [
+            {
+                "AppID": "xxx",
+                "BoostingTableID" : "xxx",
+                "BoostingTableName" : "xxx",
+                "CreateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+                "UpdateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+                "WordSize": 1998,         // the total_word size
+                "WordCount": 999,       // the line of word
+                "Preview": ["word1", "word2", "word3"] // preview words
+            }
+        ]
+    }
+}
+```
+
+<span id="4f370adc"></span>
+## Get Boosting Table
+<span id="a0b42519"></span>
+### Views
+<div style="text-align: center"><img src="https://p9-arcosite.byteimg.com/tos-cn-i-goo7wpa0wc/bb96c543d3584a73a36229c0c60383ba~tplv-goo7wpa0wc-image.image" width="690px" /></div>
+
+<span id="0341cc41"></span>
+### Request
+**Method: POST**
+
+| | | | | | \
+|**Parameter** |**Type** |**Must** |**Argument type** |**Description** |
+|---|---|---|---|---|
+| | | | | | \
+|Content-Type |string |Y |header |application/json; charset=utf-8 |
+| | | | | | \
+|Action |string |Y |body |GetBoostingTable |
+| | | | | | \
+|Version |string |Y |body |2022-08-30 |
+| | | | | | \
+|AppID |int |Y |body |AppID of application |
+| | | | | | \
+|BoostingTableID |string |Y |body |ID of boosting table |
+
+<span id="5a3c1304"></span>
+### Response
+```JSON
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "GetBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}" //header中的X-Top-Region参数
+    },
+    "Result":{
+        "AppID": "xxx",
+        "BoostingTableID" : "xxx",
+        "BoostingTableName" : "xxx",
+        "CreateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+        "UpdateTime": "2022-08-11T14:41:01Z", // UTC YYYY-MM-DD'T'HH:MM:SS'Z'
+        "WordSize": 1998,         // the total_word size
+        "WordCount": 999,       // the line of word
+        "File": "word\nword2\r\n", // the original file as string: client needs to parse it
+        "Preview": ["all", "the", "words"]
+    }
+}
+```
+
+```JSON
+// 404 NotFound
+// BoostingTableNotFound
+{
+    "ResponseMetadata": {
+        "RequestId": "20220214145719010211209131054BC103", //header中的X-Top-Request-Id参数
+        "Action": "UpdateBoostingTable",
+        "Version": "2022-08-30",
+        "Service": "{Service}",//header中的X-Top-Service参数
+        "Region": "{Region}", //header中的X-Top-Region参数
+        "Error": {
+            "Code": "OperationDenied.BoostingTableNotFound",
+            "Message": "Operation is denied because boosting table not found: xxx"
+        }
+    }
+}
+```
+
+

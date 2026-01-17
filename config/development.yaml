@@ -1,0 +1,126 @@
+# 开发环境配置
+# 已填入实际配置
+
+env: development
+debug: true
+
+# JWT 配置
+jwt_secret_key: "dev-secret-key-change-in-production-12345678"
+jwt_algorithm: HS256
+jwt_expire_hours: 24
+
+# ============================================================================
+# 必需配置
+# ============================================================================
+
+# 火山引擎 ASR (必需)
+volcano:
+  # 热词管理 API 专用凭证
+  access_key: AKLTZjgzNGQ4NDQ1NWE2NGFkNjk2YjNhNTcxZTNiODBjNGM
+  secret_key: TVdWbVpUSTJaalExTnpFMU5EVTVPVGcxT1dVek16UXlNemxsWkdFMVl6RQ==
+  app_id: "6543693041"
+  cluster_id: Speech_Recognition_Seed_AUC2000000551650674914
+  tos_bucket: meeting-agent-test
+  tos_region: cn-beijing
+  api_endpoint: https://openspeech.bytedance.com/api/v1/asr
+  boosting_table_id: "c0003fcf-3e6c-4cc5-a879-51d9761c4ea8"  # 全局热词库 ID
+  max_retries: 3
+  timeout: 300
+
+# Gemini LLM (必需)
+gemini:
+  api_keys:
+    - AIzaSyBtr_Y4uUiVeiwXlIbpcZtIHM1-O-67Sog
+    - AIzaSyCTgwuJogMIjVimhlDJpUBsF1yhQOfmetA  # 可选,用于密钥轮换
+  model: gemini-3-pro-preview
+  max_tokens: 60000
+  temperature: 0.7
+  max_retries: 3
+  timeout: 300
+
+# ============================================================================
+# 可选配置(用于完整功能测试)
+# ============================================================================
+
+# Azure ASR (可选,作为备用 ASR)
+azure:
+  subscription_keys:
+    - 5JNmdKpRY4CLnbIT8OCrfgvWDSLn5ppJkLAUNqeVZwEQLTlsoJltJQQJ99BLACYeBjFXJ3w3AAAYACOGtfnj
+    - 9e51u95I9jSWcgvO9AcYUmFZNZNyZdNH2VU0HA0VpG60ysA9L9rVJQQJ99BLACYeBjFXJ3w3AAAYACOGvbWg
+  region: eastus
+  max_retries: 3
+  timeout: 300
+
+# 科大讯飞声纹识别 (可选,用于说话人识别)
+iflytek:
+  app_id: "55646860"
+  api_key: 77750e732ba4296d3a7d89e1deafbf22
+  api_secret: YzdiYzhiNjkwNWNmZmY5YTlmNDlhMDJi
+  api_endpoint: https://api.xf-yun.com/v1/private/s1aa729d0
+  group_id: meeting_agent_test_group
+  max_retries: 3
+  timeout: 30
+
+# ============================================================================
+# 系统配置(使用默认值)
+# ============================================================================
+
+# 数据库配置(测试环境可使用 SQLite)
+database:
+  type: sqlite
+  host: ""
+  port: 0
+  username: ""
+  password: ""
+  database: test_meeting_agent.db
+  pool_size: 5
+  max_overflow: 10
+  echo: false
+
+# Redis 配置(测试环境可选)
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  max_connections: 10
+
+# 日志配置
+log:
+  level: INFO
+  format: json
+  output: stdout
+  filter_sensitive: true
+
+# 存储配置(可选)
+storage:
+  provider: tos
+  bucket: meeting-agent-test
+  region: cn-beijing
+  access_key: AKLTNmY4N2Y1ZDU2OWY4NDI5ZWIwMDY2NjUyMzFlNzA1YzE
+  secret_key: TVdJeFlUTmtZbUZrWldFeE5HVmxORGxsTmpoaFpqRXdabVl5WkdRek9XRQ==
+  temp_file_ttl: 3600
+
+# 价格配置
+pricing:
+  # ASR 价格 (元/秒)
+  volcano_asr_per_second: 0.00005
+  azure_asr_per_second: 0.00006
+  
+  # 声纹识别价格 (元/秒)
+  iflytek_voiceprint_per_second: 0.00003
+  
+  # LLM 价格 (元/Token)
+  gemini_flash_per_token: 0.00002
+  gemini_pro_per_token: 0.00005
+  
+  # 估算参数
+  estimated_tokens_per_second: 10
+  estimated_speakers_count: 3
+  estimated_sample_duration: 5.0
+
+# 业务配置
+audio_retention_days: 7
+enable_speaker_recognition: true
+default_asr_provider: volcano
+

@@ -1,0 +1,39 @@
+# Python 缓存（必须排除）
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# 虚拟环境（太大，每台电脑重新创建）
+venv/
+.venv/
+env/
+ENV/
+
+# 测试缓存（自动生成）
+.pytest_cache/
+.hypothesis/
+
+# IDE 配置（个人偏好）
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 其他自动生成的文件
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# 以下文件都会提交到 Git（私有仓库）
+# ✅ config/*.yaml - 配置文件（包含 API 密钥）
+# ✅ .env - 环境变量
+# ✅ *.db - 数据库文件（包含测试数据）
+# ✅ uploads/ - 上传的文件
+# ✅ *.log - 日志文件
+# ✅ temp/ - 临时文件

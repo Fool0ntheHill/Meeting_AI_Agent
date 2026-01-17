@@ -1,0 +1,123 @@
+# 生产环境配置示例
+# 复制此文件为 production.yaml 并填入实际配置
+
+env: production
+debug: false
+api_host: 0.0.0.0
+api_port: 8000
+worker_count: 8
+
+# 数据库配置
+database:
+  host: ${DB_HOST}
+  port: ${DB_PORT:5432}
+  database: ${DB_NAME}
+  username: ${DB_USER}
+  password: ${DB_PASSWORD}
+  pool_size: 20
+  max_overflow: 40
+  echo: false
+
+# Redis 配置
+redis:
+  host: ${REDIS_HOST}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD}
+  db: 0
+  max_connections: 100
+  decode_responses: true
+
+# 火山引擎配置
+volcano:
+  access_key: ${VOLCANO_ACCESS_KEY}
+  secret_key: ${VOLCANO_SECRET_KEY}
+  app_id: ${VOLCANO_APP_ID}
+  cluster_id: ${VOLCANO_CLUSTER_ID}
+  tos_bucket: ${VOLCANO_TOS_BUCKET}
+  tos_region: ${VOLCANO_TOS_REGION:cn-beijing}
+  api_endpoint: https://openspeech.bytedance.com/api/v1/asr
+  boosting_table_id: ${VOLCANO_BOOSTING_TABLE_ID}  # 全局热词库 ID，运行 scripts/upload_global_hotwords.py 获取
+  max_retries: 3
+  timeout: 300
+
+# Azure 配置
+azure:
+  subscription_keys:
+    - ${AZURE_KEY_1}
+    - ${AZURE_KEY_2}
+    - ${AZURE_KEY_3}
+  region: ${AZURE_REGION:eastus}
+  max_retries: 3
+  timeout: 300
+
+# 科大讯飞配置
+iflytek:
+  app_id: ${IFLYTEK_APP_ID}
+  api_key: ${IFLYTEK_API_KEY}
+  api_secret: ${IFLYTEK_API_SECRET}
+  api_endpoint: https://api.xfyun.cn/v1/private/sf8e6aca1
+  group_id: ${IFLYTEK_GROUP_ID}
+  max_retries: 3
+  timeout: 30
+
+# Gemini 配置
+gemini:
+  api_keys:
+    - ${GEMINI_API_KEY_1}
+    - ${GEMINI_API_KEY_2}
+    - ${GEMINI_API_KEY_3}
+  model: gemini-2.0-flash-exp
+  max_tokens: 8192
+  temperature: 0.7
+  max_retries: 3
+  timeout: 120
+
+# 日志配置
+log:
+  level: INFO
+  format: json
+  output: file
+  file_path: /var/log/meeting-agent/app.log
+  max_bytes: 10485760
+  backup_count: 10
+  filter_sensitive: true
+
+# 消息队列配置
+queue:
+  backend: redis
+  redis_url: ${QUEUE_REDIS_URL}
+  queue_name: meeting_tasks
+  max_priority: 10
+
+# 存储配置
+storage:
+  provider: tos
+  bucket: ${STORAGE_BUCKET}
+  region: ${STORAGE_REGION}
+  access_key: ${STORAGE_ACCESS_KEY}
+  secret_key: ${STORAGE_SECRET_KEY}
+  temp_file_ttl: 3600
+
+# 价格配置
+pricing:
+  # ASR 价格 (元/秒)
+  volcano_asr_per_second: 0.00005
+  azure_asr_per_second: 0.00006
+  
+  # 声纹识别价格 (元/秒)
+  iflytek_voiceprint_per_second: 0.00003
+  
+  # LLM 价格 (元/Token)
+  gemini_flash_per_token: 0.00002
+  gemini_pro_per_token: 0.00005
+  
+  # 估算参数
+  estimated_tokens_per_second: 10
+  estimated_speakers_count: 3
+  estimated_sample_duration: 5.0
+
+# 业务配置
+audio_retention_days: 7
+audio_retention_max_days: 90
+enable_speaker_recognition: true
+default_asr_provider: volcano

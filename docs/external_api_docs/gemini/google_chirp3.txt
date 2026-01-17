@@ -1,0 +1,742 @@
+Chirp 3 是 Google 最新一代多语言自动语音识别 (ASR) 专用生成模型，它根据用户反馈和体验进行了优化，以更好地满足用户需求。Chirp 3 的准确率和速度比之前的 Chirp 模型有所提升，并提供讲话人区分和自动检测语言功能。
+
+模型详情
+Chirp 3: Transcription，仅在 Speech-to-Text API V2 中提供。
+
+模型标识符
+您可以像使用任何其他模型一样使用 Chirp 3：转写，只需在使用 API 时在识别请求中指定相应的模型标识符，或在 Google Cloud 控制台中时指定模型名称即可。在识别中指定相应的标识符。
+
+型号	型号标识符
+Chirp 3	chirp_3
+API 方法
+并非所有识别方法都支持相同的语言集合，由于 Chirp 3 可在 Speech-to-Text API V2 中使用，因此它支持以下识别方法：
+
+API 版本	API 方法	支持
+V2	Speech.StreamingRecognize（非常适合流式传输和实时音频）	支持
+V2	Speech.Recognize（非常适合短于 1 分钟的音频）	支持
+V2	Speech.BatchRecognize（非常适合 1 分钟到 1 小时的长音频）	支持
+注意： 您始终可以使用此处所述的地理位置 API 找到每种转写模型支持的最新语言区域和功能列表。
+区域可用性
+Chirp 3 已在以下 Google Cloud 区域推出，未来还计划在更多区域推出：
+
+Google Cloud 可用区	发布就绪情况
+us (multi-region)	GA
+eu (multi-region)	GA
+asia-northeast1	GA
+asia-southeast1	GA
+asia-south1	预览版
+europe-west2	预览版
+europe-west3	预览版
+northamerica-northeast1	预览版
+按照此处的说明使用地理位置 API，您可以找到每个转写模型支持的最新 Google Cloud 区域、语言和语言区域以及功能列表。
+
+转写功能的语言支持情况
+Chirp 3 支持在 StreamingRecognize、Recognize 和 BatchRecognize 模式下进行转写，支持的语言如下：
+
+语言	BCP-47 Code	发布就绪情况
+加泰罗尼亚语（西班牙）	ca-ES	GA
+简体中文	cmn-Hans-CN	GA
+克罗地亚语（克罗地亚）	hr-HR	GA
+丹麦语（丹麦）	da-DK	GA
+荷兰语（荷兰）	nl-NL	GA
+英语（澳大利亚）	en-AU	GA
+英语（英国）	en-GB	GA
+英语（印度）	en-IN	GA
+英语（美国）	en-US	GA
+芬兰语（芬兰）	fi-FI	GA
+法语（加拿大）	fr-CA	GA
+法语（法国）	fr-FR	GA
+德语（德国）	de-DE	GA
+希腊语（希腊）	el-GR	GA
+印地语（印度）	hi-IN	GA
+意大利语（意大利）	it-IT	GA
+日语（日本）	ja-JP	GA
+韩语（韩国）	ko-KR	GA
+波兰语（波兰）	pl-PL	GA
+葡萄牙语（巴西）	pt-BR	GA
+葡萄牙语（葡萄牙）	pt-PT	GA
+罗马尼亚语（罗马尼亚）	ro-RO	GA
+俄语（俄罗斯）	ru-RU	GA
+西班牙语（西班牙）	es-ES	GA
+西班牙语（美国）	es-US	GA
+瑞典语（瑞典）	sv-SE	GA
+土耳其语（土耳其）	tr-TR	GA
+乌克兰语（乌克兰）	uk-UA	GA
+越南语（越南）	vi-VN	GA
+阿拉伯语	ar-XA	预览版
+阿拉伯语（阿尔及利亚）	ar-DZ	预览版
+阿拉伯语（巴林）	ar-BH	预览版
+阿拉伯语（埃及）	ar-EG	预览版
+阿拉伯语（以色列）	ar-IL	预览版
+阿拉伯语（约旦）	ar-JO	预览版
+阿拉伯语（科威特）	ar-KW	预览版
+阿拉伯语（黎巴嫩）	ar-LB	预览版
+阿拉伯语（毛里塔尼亚）	ar-MR	预览版
+阿拉伯语（摩洛哥）	ar-MA	预览版
+阿拉伯语（阿曼）	ar-OM	预览版
+阿拉伯语（卡塔尔）	ar-QA	预览版
+阿拉伯语（沙特阿拉伯）	ar-SA	预览版
+阿拉伯语（巴勒斯坦国）	ar-PS	预览版
+阿拉伯语（叙利亚）	ar-SY	预览版
+阿拉伯语（突尼斯）	ar-TN	预览版
+阿拉伯语（阿拉伯联合酋长国）	ar-AE	预览版
+阿拉伯语（也门）	ar-YE	预览版
+亚美尼亚语（亚美尼亚）	hy-AM	预览版
+孟加拉语（孟加拉）	bn-BD	预览版
+孟加拉语（印度）	bn-IN	预览版
+保加利亚语（保加利亚）	bg-BG	预览版
+缅甸语（缅甸）	my-MM	预览版
+中库尔德语（伊拉克）	ar-IQ	预览版
+中文、粤语（香港繁体）	yue-Hant-HK	预览版
+中文、普通话（台湾繁体）	cmn-Hant-TW	预览版
+捷克语（捷克共和国）	cs-CZ	预览版
+英语（菲律宾）	en-PH	预览版
+爱沙尼亚语（爱沙尼亚）	et-EE	预览版
+菲律宾语（菲律宾）	fil-PH	预览版
+古吉拉特语（印度）	gu-IN	预览版
+希伯来语（以色列）	iw-IL	预览版
+匈牙利语（匈牙利）	hu-HU	预览版
+印度尼西亚语（印度尼西亚）	id-ID	预览版
+卡纳达语（印度）	kn-IN	预览版
+高棉语（柬埔寨）	km-KH	预览版
+老挝语（老挝）	lo-LA	预览版
+拉脱维亚语（拉脱维亚）	lv-LV	预览版
+立陶宛语（立陶宛）	lt-LT	预览版
+马来语（马来西亚）	ms-MY	预览版
+马拉雅拉姆语（印度）	ml-IN	预览版
+马拉地语（印度）	mr-IN	预览版
+尼泊尔语（尼泊尔）	ne-NP	预览版
+挪威语（挪威）	no-NO	预览版
+波斯语（伊朗）	fa-IR	预览版
+塞尔维亚语（塞尔维亚）	sr-RS	预览版
+斯洛伐克语（斯洛伐克）	sk-SK	预览版
+斯洛文尼亚语（斯洛文尼亚）	sl-SI	预览版
+西班牙语（墨西哥）	es-MX	预览版
+斯瓦希里语	sw	预览版
+泰米尔语（印度）	ta-IN	预览版
+泰卢固语（印度）	te-IN	预览版
+泰语（泰国）	th-TH	预览版
+乌兹别克语（乌兹别克斯坦）	uz-UZ	预览版
+讲话人区分功能支持的语言
+Chirp 3 仅在 BatchRecognize 和 Recognize 模式下支持转写和讲话人区分功能，支持的语言如下：
+
+语言	BCP-47 代码
+简体中文	cmn-Hans-CN
+德语（德国）	de-DE
+英语（英国）	en-GB
+英语（印度）	en-IN
+英语（美国）	en-US
+西班牙语（西班牙）	es-ES
+西班牙语（美国）	es-US
+法语（加拿大）	fr-CA
+法语（法国）	fr-FR
+印地语（印度）	hi-IN
+意大利语（意大利）	it-IT
+日语（日本）	ja-JP
+韩语（韩国）	ko-KR
+葡萄牙语（巴西）	pt-BR
+功能支持和限制
+Chirp 3 支持以下功能：
+
+功能	说明	发布阶段
+自动加注标点符号	由模型自动生成，可选择停用。	GA
+自动大写	由模型自动生成，可选择停用。	GA
+话语级时间戳	由模型自动生成。	GA
+讲话人区分	自动识别单声道音频选段中的不同讲话人。仅适用于 BatchRecognize	GA
+语音自适应（自定义调整）	以短语或字词的形式向模型提供提示，以提高特定术语或专有名词的识别准确率。	GA
+与语言无关的音频转写	自动推断并以最常用的语言进行转写。	GA
+Chirp 3 不支持以下功能：
+
+功能	说明
+字词级时间戳	由模型自动生成，可选择启用，但预计转写质量会有所下降。
+字词级置信度分数	API 会返回一个值，但这不是真正的置信度分数。
+使用 Chirp 3 转写
+了解如何使用 Chirp 3 执行转写任务。
+
+执行流式语音识别
+Python
+
+
+import os
+
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.api_core.client_options import ClientOptions
+
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+REGION = "us"
+
+def transcribe_streaming_chirp3(
+   audio_file: str
+) -> cloud_speech.StreamingRecognizeResponse:
+   """Transcribes audio from audio file stream using the Chirp 3 model of Google Cloud Speech-to-Text v2 API.
+
+   Args:
+       audio_file (str): Path to the local audio file to be transcribed.
+           Example: "resources/audio.wav"
+
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the Speech-to-Text API V2 containing
+       the transcription results.
+   """
+
+   # Instantiates a client
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   # Reads a file as bytes
+   with open(audio_file, "rb") as f:
+       content = f.read()
+
+   # In practice, stream should be a generator yielding chunks of audio data
+   chunk_length = len(content) // 5
+   stream = [
+       content[start : start + chunk_length]
+       for start in range(0, len(content), chunk_length)
+   ]
+   audio_requests = (
+       cloud_speech.StreamingRecognizeRequest(audio=audio) for audio in stream
+   )
+
+   recognition_config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["en-US"],
+       model="chirp_3",
+   )
+   streaming_config = cloud_speech.StreamingRecognitionConfig(
+       config=recognition_config
+   )
+   config_request = cloud_speech.StreamingRecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       streaming_config=streaming_config,
+   )
+
+   def requests(config: cloud_speech.RecognitionConfig, audio: list) -> list:
+       yield config
+       yield from audio
+
+   # Transcribes the audio into text
+   responses_iterator = client.streaming_recognize(
+       requests=requests(config_request, audio_requests)
+   )
+   responses = []
+   for response in responses_iterator:
+       responses.append(response)
+       for result in response.results:
+           print(f"Transcript: {result.alternatives[0].transcript}")
+
+   return responses
+执行同步语音识别
+Python
+
+
+import os
+
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.api_core.client_options import ClientOptions
+
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+REGION = "us"
+
+def transcribe_sync_chirp3(
+   audio_file: str
+) -> cloud_speech.RecognizeResponse:
+   """Transcribes an audio file using the Chirp 3 model of Google Cloud Speech-to-Text V2 API.
+   Args:
+       audio_file (str): Path to the local audio file to be transcribed.
+           Example: "resources/audio.wav"
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the Speech-to-Text API containing
+       the transcription results.
+   """
+
+   # Instantiates a client
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   # Reads a file as bytes
+   with open(audio_file, "rb") as f:
+       audio_content = f.read()
+
+   config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["en-US"],
+       model="chirp_3",
+   )
+
+   request = cloud_speech.RecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       config=config,
+       content=audio_content,
+   )
+
+   # Transcribes the audio into text
+   response = client.recognize(request=request)
+
+   for result in response.results:
+       print(f"Transcript: {result.alternatives[0].transcript}")
+
+   return response
+
+执行批量语音识别
+Python
+
+
+import os
+
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.api_core.client_options import ClientOptions
+
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+REGION = "us"
+
+def transcribe_batch_3(
+   audio_uri: str,
+) -> cloud_speech.BatchRecognizeResults:
+   """Transcribes an audio file from a Google Cloud Storage URI using the Chirp 3 model of Google Cloud Speech-to-Text v2 API.
+   Args:
+       audio_uri (str): The Google Cloud Storage URI of the input audio file.
+           E.g., gs://[BUCKET]/[FILE]
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the Speech-to-Text API containing
+       the transcription results.
+   """
+
+   # Instantiates a client
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["en-US"],
+       model="chirp_3",
+   )
+
+   file_metadata = cloud_speech.BatchRecognizeFileMetadata(uri=audio_uri)
+
+   request = cloud_speech.BatchRecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       config=config,
+       files=[file_metadata],
+       recognition_output_config=cloud_speech.RecognitionOutputConfig(
+           inline_response_config=cloud_speech.InlineOutputConfig(),
+       ),
+   )
+
+   # Transcribes the audio into text
+   operation = client.batch_recognize(request=request)
+
+   print("Waiting for operation to complete...")
+   response = operation.result(timeout=120)
+
+   for result in response.results[audio_uri].transcript.results:
+       print(f"Transcript: {result.alternatives[0].transcript}")
+
+   return response.results[audio_uri].transcript
+
+使用 Chirp 3 功能
+通过代码示例了解如何使用最新功能：
+
+执行与语言无关的转写
+Chirp 3 可以自动识别音频中使用的主要语言并进行转写，这对于多语言应用至关重要。如需实现此目的，请按代码示例所示设置 language_codes=["auto"]：
+
+Python
+
+
+import os
+
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.api_core.client_options import ClientOptions
+
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+REGION = "us"
+
+def transcribe_sync_chirp3_auto_detect_language(
+   audio_file: str
+) -> cloud_speech.RecognizeResponse:
+   """Transcribes an audio file and auto-detect spoken language using Chirp 3.
+   Please see https://cloud.google.com/speech-to-text/docs/encoding for more
+   information on which audio encodings are supported.
+   Args:
+       audio_file (str): Path to the local audio file to be transcribed.
+           Example: "resources/audio.wav"
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the Speech-to-Text API containing
+       the transcription results.
+   """
+   # Instantiates a client
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   # Reads a file as bytes
+   with open(audio_file, "rb") as f:
+       audio_content = f.read()
+
+   config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["auto"],  # Set language code to auto to detect language.
+       model="chirp_3",
+   )
+
+   request = cloud_speech.RecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       config=config,
+       content=audio_content,
+   )
+
+   # Transcribes the audio into text
+   response = client.recognize(request=request)
+
+   for result in response.results:
+       print(f"Transcript: {result.alternatives[0].transcript}")
+       print(f"Detected Language: {result.language_code}")
+
+   return response
+执行受语言限制的转写
+Chirp 3 可以自动识别音频文件中的主要语言并进行转写。您还可以根据预期使用的特定语言区域来设置条件，例如：["en-US", "fr-FR"]，这样可将模型资源集中在最有可能使用的语言上，从而获得更可靠的结果，如以下代码示例所示：
+
+Python
+
+
+import os
+
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.api_core.client_options import ClientOptions
+
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+REGION = "us"
+
+def transcribe_sync_3_auto_detect_language(
+   audio_file: str
+) -> cloud_speech.RecognizeResponse:
+   """Transcribes an audio file and auto-detect spoken language using Chirp 3.
+   Please see https://cloud.google.com/speech-to-text/docs/encoding for more
+   information on which audio encodings are supported.
+   Args:
+       audio_file (str): Path to the local audio file to be transcribed.
+           Example: "resources/audio.wav"
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the Speech-to-Text API containing
+       the transcription results.
+   """
+   # Instantiates a client
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   # Reads a file as bytes
+   with open(audio_file, "rb") as f:
+       audio_content = f.read()
+
+   config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["en-US", "fr-FR"],  # Set language codes of the expected spoken locales
+       model="chirp_3",
+   )
+
+   request = cloud_speech.RecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       config=config,
+       content=audio_content,
+   )
+
+   # Transcribes the audio into text
+   response = client.recognize(request=request)
+
+   for result in response.results:
+       print(f"Transcript: {result.alternatives[0].transcript}")
+       print(f"Detected Language: {result.language_code}")
+
+   return response
+
+执行转写和讲话人区分
+使用 Chirp 3 执行转写和讲话人区分任务。
+
+Python
+
+
+import os
+
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.api_core.client_options import ClientOptions
+
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+REGION = "us"
+
+def transcribe_batch_chirp3(
+   audio_uri: str,
+) -> cloud_speech.BatchRecognizeResults:
+   """Transcribes an audio file from a Google Cloud Storage URI using the Chirp 3 model of Google Cloud Speech-to-Text V2 API.
+   Args:
+       audio_uri (str): The Google Cloud Storage URI of the input
+         audio file. E.g., gs://[BUCKET]/[FILE]
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the
+         Speech-to-Text API containing the transcription results.
+   """
+
+   # Instantiates a client.
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["en-US"],  # Use "auto" to detect language.
+       model="chirp_3",
+       features=cloud_speech.RecognitionFeatures(
+           # Enable diarization by setting empty diarization configuration.
+           diarization_config=cloud_speech.SpeakerDiarizationConfig(),
+       ),
+   )
+
+   file_metadata = cloud_speech.BatchRecognizeFileMetadata(uri=audio_uri)
+
+   request = cloud_speech.BatchRecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       config=config,
+       files=[file_metadata],
+       recognition_output_config=cloud_speech.RecognitionOutputConfig(
+           inline_response_config=cloud_speech.InlineOutputConfig(),
+       ),
+   )
+
+   # Creates audio transcription job.
+   operation = client.batch_recognize(request=request)
+
+   print("Waiting for transcription job to complete...")
+   response = operation.result(timeout=120)
+
+   for result in response.results[audio_uri].transcript.results:
+       print(f"Transcript: {result.alternatives[0].transcript}")
+       print(f"Detected Language: {result.language_code}")
+       print(f"Speakers per word: {result.alternatives[0].words}")
+
+   return response.results[audio_uri].transcript
+通过模型自适应提高准确率
+Chirp 3 可以利用模型自适应功能来提高特定音频的转写准确率。该功能允许您提供一个特定的字词和短语列表，从而增加模型识别它们的可能性。这对于领域专用术语、专有名词或独特词汇尤其有用。
+
+注意：chirp_3 支持最多包含 1,000 个短语的自适应字典。我们建议您尽可能添加较少的条目，以防止在非自适应术语上的识别性能下降。
+Python
+
+
+import os
+
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.api_core.client_options import ClientOptions
+
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+REGION = "us"
+
+def transcribe_sync_chirp3_model_adaptation(
+   audio_file: str
+) -> cloud_speech.RecognizeResponse:
+   """Transcribes an audio file using the Chirp 3 model with adaptation, improving accuracy for specific audio characteristics or vocabulary.
+   Args:
+       audio_file (str): Path to the local audio file to be transcribed.
+           Example: "resources/audio.wav"
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the Speech-to-Text API containing
+       the transcription results.
+   """
+
+   # Instantiates a client
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   # Reads a file as bytes
+   with open(audio_file, "rb") as f:
+       audio_content = f.read()
+
+   config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["en-US"],
+       model="chirp_3",
+       # Use model adaptation
+       adaptation=cloud_speech.SpeechAdaptation(
+         phrase_sets=[
+             cloud_speech.SpeechAdaptation.AdaptationPhraseSet(
+                 inline_phrase_set=cloud_speech.PhraseSet(phrases=[
+                   {
+                       "value": "alphabet",
+                   },
+                   {
+                         "value": "cell phone service",
+                   }
+                 ])
+             )
+         ]
+       )
+   )
+
+   request = cloud_speech.RecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       config=config,
+       content=audio_content,
+   )
+
+   # Transcribes the audio into text
+   response = client.recognize(request=request)
+
+   for result in response.results:
+       print(f"Transcript: {result.alternatives[0].transcript}")
+
+   return response
+启用降噪器和信噪比过滤
+Chirp 3 可以在转写前，通过减少背景噪声和滤除不必要的声音来提高音质。您可以通过启用内置降噪器和信噪比 (SNR) 过滤功能，来改善嘈杂环境下的转写效果。
+
+设置 denoiser_audio=true 可有效帮助您减少背景音乐或雨声、街道交通声等噪声。
+
+注意：降噪器功能无法消除背景人声。
+您可以设置 snr_threshold=X 来控制转写所需的最低语音响度。这有助于滤除非语音音频或背景噪声，防止结果中出现不必要的文字。snr_threshold 值越高，意味着用户需要更大声地说话，模型才能转写其话语。
+
+信噪比过滤可用于实时流式传输应用场景中，以避免将不必要的声音发送给模型进行转写。此设置的值越高，意味着相对于背景噪声，您的语音音量必须越大才能被发送到转写模型。
+
+snr_threshold 的配置会受到 denoise_audio 是 true 还是 false 影响。如果 denoise_audio=true，背景噪声会被移除，这会使语音相对更清晰。音频的整体信噪比会提高。
+
+如果您的应用场景仅涉及用户语音，而无其他人说话，则可以设置 denoise_audio=true 来提高信噪比过滤的灵敏度，这有助于滤除非语音噪声。如果您的应用场景涉及背景人声，并且您想避免转写背景语音，则可考虑设置 denoise_audio=false 并降低信噪比阈值。
+
+以下是建议的信噪比阈值。合理的 snr_threshold 值可以设置为 0 - 1000。值为 0 表示不过滤任何内容，值为 1000 表示过滤所有内容。如果建议的设置不适合您，可微调该值。
+
+音频降噪	信噪比阈值	语音灵敏度
+true	10.0	高
+true	20.0	中
+true	40.0	低
+true	100.0	非常低
+false	0.5	高
+false	1.0	中
+false	2.0	低
+false	5.0	非常低
+Python
+
+
+ import os
+
+ from google.cloud.speech_v2 import SpeechClient
+ from google.cloud.speech_v2.types import cloud_speech
+ from google.api_core.client_options import ClientOptions
+
+ PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+ REGION = "us"
+
+def transcribe_sync_chirp3_with_timestamps(
+   audio_file: str
+) -> cloud_speech.RecognizeResponse:
+   """Transcribes an audio file using the Chirp 3 model of Google Cloud Speech-to-Text v2 API, which provides word-level timestamps for each transcribed word.
+   Args:
+       audio_file (str): Path to the local audio file to be transcribed.
+           Example: "resources/audio.wav"
+   Returns:
+       cloud_speech.RecognizeResponse: The response from the Speech-to-Text API containing
+       the transcription results.
+   """
+
+   # Instantiates a client
+   client = SpeechClient(
+       client_options=ClientOptions(
+           api_endpoint=f"{REGION}-speech.googleapis.com",
+       )
+   )
+
+   # Reads a file as bytes
+   with open(audio_file, "rb") as f:
+       audio_content = f.read()
+
+   config = cloud_speech.RecognitionConfig(
+       auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+       language_codes=["en-US"],
+       model="chirp_3",
+       denoiser_config={
+           denoise_audio: True,
+           # Medium snr threshold
+           snr_threshold: 20.0,
+       }
+   )
+
+   request = cloud_speech.RecognizeRequest(
+       recognizer=f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_",
+       config=config,
+       content=audio_content,
+   )
+
+   # Transcribes the audio into text
+   response = client.recognize(request=request)
+
+   for result in response.results:
+       print(f"Transcript: {result.alternatives[0].transcript}")
+
+   return response
+在 Google Cloud 控制台中使用 Chirp 3
+注册 Google Cloud 账号并创建项目。
+前往 Google Cloud 控制台中的语音。
+如果该 API 尚未启用，请启用该 API。
+确保您拥有 STT 控制台工作区。如果您没有工作区，则必须创建一个工作区。
+
+前往“转写”页面，然后点击新建转写。
+
+打开工作区下拉列表，然后点击新建工作区以创建用于转写的工作区。
+
+在创建新工作区导航边栏中，点击浏览。
+
+点击以创建新的存储桶。
+
+输入存储桶的名称，然后点击继续。
+
+点击创建以创建您的 Cloud Storage 存储桶。
+
+创建存储桶后，点击选择以选择要使用的存储桶。
+
+点击创建以完成为 Speech-to-Text API V2 控制台创建工作区的过程。
+
+对实际音频执行转写。
+
+Speech-to-Text 转写创建页面，其中显示了文件选择或上传。
+Speech-to-Text 转写创建页面，其中显示了文件选择或上传。
+在新建转写页面中，通过上传（本地上传）或指定现有的 Cloud Storage 文件（云端存储空间）来选择音频文件。
+
+点击继续以转到“转写”选项。
+
+从您之前创建的识别器中选择您计划用于使用 Chirp 进行识别的口语。
+
+在模型下拉菜单中，选择 chirp_3。
+
+在识别器下拉列表中，选择新创建的识别器。
+
+点击提交，使用 chirp_3 运行您的第一个识别请求。
+
+查看 Chirp 3 转写结果。
+
+在转写页面中，点击转写名称以查看其结果。
+
+在转写详情页面中，查看转写结果，并酌情在浏览器中播放音频。
+
+后续步骤
+了解如何转写短音频文件。
+了解如何转写流式传输音频。
+了解如何转录长音频文件。
+如需了解关于最佳性能、准确度和其他方面的提示，请参阅最佳实践文档。

@@ -1,0 +1,80 @@
+# 测试环境配置示例(最小化配置)
+# 复制此文件为 test.yaml 并填入实际配置
+
+env: test
+debug: true
+
+# ============================================================================
+# 必需配置
+# ============================================================================
+
+# 火山引擎 ASR (必需)
+volcano:
+  access_key: ${VOLCANO_ACCESS_KEY}
+  secret_key: ${VOLCANO_SECRET_KEY}
+  app_id: ${VOLCANO_APP_ID}
+  cluster_id: ${VOLCANO_CLUSTER_ID}
+  tos_bucket: ${VOLCANO_TOS_BUCKET}
+  tos_region: cn-beijing
+  api_endpoint: https://openspeech.bytedance.com/api/v1/asr
+  max_retries: 3
+  timeout: 300
+
+# Gemini LLM (必需)
+gemini:
+  api_keys:
+    - ${GEMINI_API_KEY_1}
+    - ${GEMINI_API_KEY_2:}  # 可选,用于密钥轮换
+  model: gemini-2.0-flash-exp
+  max_tokens: 8192
+  temperature: 0.7
+  max_retries: 3
+  timeout: 120
+
+# ============================================================================
+# 可选配置(用于完整功能测试)
+# ============================================================================
+
+# Azure ASR (可选,作为备用 ASR)
+azure:
+  subscription_keys:
+    - ${AZURE_KEY_1:}
+    - ${AZURE_KEY_2:}
+  region: eastus
+  max_retries: 3
+  timeout: 300
+
+# 科大讯飞声纹识别 (可选,用于说话人识别)
+iflytek:
+  app_id: ${IFLYTEK_APP_ID:}
+  api_key: ${IFLYTEK_API_KEY:}
+  api_secret: ${IFLYTEK_API_SECRET:}
+  api_endpoint: https://api.xfyun.cn/v1/private/sf8e6aca1
+  group_id: ${IFLYTEK_GROUP_ID:}
+  max_retries: 3
+  timeout: 30
+
+# ============================================================================
+# 系统配置(使用默认值)
+# ============================================================================
+
+# 日志配置
+log:
+  level: INFO
+  format: json
+  output: stdout
+  filter_sensitive: true
+
+# 存储配置(可选)
+storage:
+  provider: tos
+  bucket: ${STORAGE_BUCKET:}
+  region: ${STORAGE_REGION:cn-beijing}
+  access_key: ${STORAGE_ACCESS_KEY:}
+  secret_key: ${STORAGE_SECRET_KEY:}
+  temp_file_ttl: 3600
+
+# 业务配置
+audio_retention_days: 7
+enable_speaker_recognition: true
+default_asr_provider: volcano

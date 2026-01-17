@@ -1,0 +1,239 @@
+# 声纹识别 (Voiceprint Recognition) API 文档
+## 1. 接口说明
+声纹识别（Voiceprint Recognition）是一项提取说话人声音特征和说话内容信息，自动核验说话人身份的技术。可以将说话人声纹信息与库中的已知用户声纹进行 **1:1 比对验证**和 **1:N 的检索**，当声纹匹配时即为验证/检索成功。
+> **⚠️ 温馨提示**：声纹识别服务已升级，和老版本的声纹数据不兼容，暂不支持迁移旧数据。
+### 1.1 功能列表
+* 创建声纹特征库
+* 删除声纹特征库
+* 添加声纹特征
+* 删除声纹特征
+* 特征比对 1:1
+* 特征比对 1:N
+* 查询声纹特征列表
+* 更新声纹特征
+---
+## 2. 接口要求
+集成声纹识别 API 时，请遵循以下配置要求：
+| 内容 | 说明 |
+| --- | --- |
+| **传输方式** | HTTP / HTTPS (为提高安全性，强烈推荐 HTTPS) |
+| **请求地址** | `https://api.xf-yun.com/v1/private/s1aa729d0` |
+| **请求方法** | POST |
+| **接口鉴权** | 签名机制 (详情请参照 [鉴权认证](https://www.google.com/search?q=%233-%E9%89%B4%E6%9D%83%E8%AE%A4%E8%AF%81)) |
+| **字符编码** | UTF-8 |
+| **响应格式** | JSON |
+| **开发语言** | 任意 (只要支持发起 HTTP 请求) |
+| **适用范围** | 任意操作系统 (因不支持跨域，不适用于浏览器端直接调用) |
+| **音频格式** | • 采样率：16k
+• 位长：16bit
+• 声道：单声道
+• 格式：wav/pcm
+• 大小：Base64 编码后不超过 4M
+• 时长：有效帧大于 0.5s (建议 3-5 秒) |
+### 2.1 接口调用流程
+1. **计算签名**：通过接口密钥基于 `hmac-sha256` 计算签名，将签名及其他参数加在请求地址 URL 后面。
+2. **构造请求**：将请求参数（JSON）及音频数据放在 HTTP Request Body 中，以 POST 形式提交。
+3. **接收响应**：向服务器发送请求后，解析返回的 JSON 结果。
+---
+## 3. 鉴权认证
+在调用业务接口时，请求方需要对请求进行签名，服务端通过签名来校验请求的合法性。
+### 3.1 鉴权参数 (URL 参数)
+请求 URL 示例：
+```
+https://api.xf-yun.com/v1/private/s1aa729d0?authorization=xxx&host=api.xf-yun.com&date=Fri%2C+23+Apr+2021+02%3A35%3A47+GMT
+```
+| 参数 | 类型 | 必传 | 说明 |
+| --- | --- | --- | --- |
+| **host** | string | 是 | 请求主机 (`api.xf-yun.com`) |
+| **date** | string | 是 | 当前时间戳，RFC1123 格式 (例如 `Fri, 23 Apr 2021 02:35:47 GMT`)。
+**注意**：服务端允许最大 300 秒的时钟偏差。 |
+| **authorization** | string | 是 | Base64 编码的签名信息 (生成规则见下文) |
+### 3.2 Authorization 生成规则
+1. **获取密钥**：在控制台获取 `APIKey` 和 `APISecret` (均为 32 位字符串)。
+2. **构造签名原始串 (signature_origin)**：
+格式：`host: $host\ndate: $date\n$request-line`
+*示例：*
+```
+host: api.xf-yun.com
+date: Fri, 23 Apr 2021 02:35:47 GMT
+POST /v1/private/s1aa729d0 HTTP/1.1
+```
+3. **计算 HMAC-SHA256 摘要**：
+`signature_sha = hmac-sha256(signature_origin, $apiSecret)`
+4. **Base64 编码签名**：
+`signature = base64(signature_sha)`
+5. **构造 Authorization 原始串**：
+格式：`api_key="$api_key", algorithm="hmac-sha256", headers="host date request-line", signature="$signature"`
+6. **生成最终 Authorization**：
+`authorization = base64(authorization_origin)`
+### 3.3 鉴权错误码
+| HTTP Code | 错误信息 | 描述与解决方法 |
+| --- | --- | --- |
+| **401** | `Unauthorized` | 缺少 authorization 参数。 |
+| **401** | `HMAC signature cannot be verified` | 签名参数解析失败。检查 APIKey 是否正确，参数是否有缺失。 |
+| **401** | `HMAC signature does not match` | 签名校验失败。检查 APISecret、拼接顺序、Base64 长度 (正常 44 字节)。 |
+| **403** | `HMAC signature cannot be verified...` | 时钟偏移校验失败。检查服务器时间，偏差需在 5 分钟内。 |
+---
+## 4. 业务接口详情
+所有接口均通过 POST 请求 Body 传递 JSON 字符串。
+### 4.1 创建声纹特征库 (createGroup)
+**功能**：创建一个新的声纹分组。
+**请求参数示例**：
+```json
+{
+"header": {
+"app_id": "your_app_id",
+"status": 3
+},
+"parameter": {
+"s1aa729d0": {
+"func": "createGroup",
+"groupId": "iFLYTEK_examples_groupId",
+"groupName": "iFLYTEK_examples_groupName",
+"groupInfo": "iFLYTEK_examples_groupInfo",
+"createGroupRes": {
+"encoding": "utf8",
+"compress": "raw",
+"format": "json"
+}
+}
+}
+}
+```
+| 参数路径 | 类型 | 必传 | 描述 |
+| --- | --- | --- | --- |
+| **parameter.s1aa729d0.func** | string | 是 | 固定值 `createGroup` |
+| **parameter.s1aa729d0.groupId** | string | 是 | 分组唯一标识 (支持字母数字下划线，max 32) |
+| **parameter.s1aa729d0.groupName** | string | 否 | 分组名称 (max 256) |
+| **parameter.s1aa729d0.groupInfo** | string | 否 | 分组描述信息 (max 256) |
+**响应参数 (Base64 解码后)**：
+*字段位于 `payload.createGroupRes.text*`
+| 字段 | 类型 | 描述 |
+| --- | --- | --- |
+| **groupId** | string | 创建成功的分组 ID |
+| **groupName** | string | 分组名称 |
+| **groupInfo** | string | 分组描述 |
+---
+### 4.2 删除声纹特征库 (deleteGroup)
+**功能**：删除指定的分组。
+**请求参数核心字段**：
+* `func`: "deleteGroup"
+* `groupId`: 要删除的分组 ID
+**响应参数 (Base64 解码后)**：
+*字段位于 `payload.deleteGroupRes.text*`
+| 字段 | 类型 | 描述 |
+| --- | --- | --- |
+| **msg** | string | `success` 表示删除成功 |
+---
+### 4.3 添加声纹特征 (createFeature)
+**功能**：向指定分组添加音频特征。
+**请求参数示例**：
+```json
+{
+"header": { ... },
+"parameter": {
+"s1aa729d0": {
+"func": "createFeature",
+"groupId": "iFLYTEK_examples_groupId",
+"featureId": "iFLYTEK_examples_featureId",
+"featureInfo": "iFLYTEK_examples_featureInfo",
+...
+}
+},
+"payload": {
+"resource": {
+"encoding": "raw",
+"sample_rate": 16000,
+"channels": 1,
+"bit_depth": 16,
+"status": 3,
+"audio": "Base64_Audio_Data..."
+}
+}
+}
+```
+| 参数路径 | 类型 | 必传 | 描述 |
+| --- | --- | --- | --- |
+| **func** | string | 是 | `createFeature` |
+| **groupId** | string | 是 | 目标分组 ID |
+| **featureId** | string | 是 | 特征标识 (max 32) |
+| **featureInfo** | string | 否 | 特征描述 (建议加入时间戳) |
+| **payload.resource.audio** | string | 是 | 音频数据 Base64 编码 (max 4M) |
+**响应参数 (Base64 解码后)**：
+*字段位于 `payload.createFeatureRes.text*`
+| 字段 | 类型 | 描述 |
+| --- | --- | --- |
+| **featureId** | string | 创建成功的特征 ID |
+---
+### 4.4 删除声纹特征 (deleteFeature)
+**功能**：删除指定特征。
+**请求参数核心字段**：
+* `func`: "deleteFeature"
+* `groupId`: 特征所在分组
+* `featureId`: 要删除的特征 ID
+**响应参数 (Base64 解码后)**：
+* `msg`: "success"
+---
+### 4.5 特征比对 1:1 (searchScoreFea)
+**功能**：验证上传的音频与指定 `featureId` 是否匹配（验证“你是你”）。
+**请求参数核心字段**：
+* `func`: "searchScoreFea"
+* `groupId`: 分组 ID
+* `dstFeatureId`: 目标特征 ID (即要比对的对象)
+* `payload.resource.audio`: 待验证音频
+**响应参数 (Base64 解码后)**：
+*字段位于 `payload.searchScoreFeaRes.text*`
+| 字段 | 类型 | 描述 |
+| --- | --- | --- |
+| **score** | float | 相似度得分 (-1 到 1)。**建议 0.6-1.0 判定为通过**。 |
+| **featureId** | string | 目标特征 ID |
+| **featureInfo** | string | 目标特征信息 |
+---
+### 4.6 特征比对 1:N (searchFea)
+**功能**：在指定分组中检索与上传音频最相似的 N 个特征（验证“你是谁”）。
+**请求参数核心字段**：
+* `func`: "searchFea"
+* `groupId`: 搜索的目标分组
+* `topK`: int, 期望返回的特征数目 (最大 10)
+* `payload.resource.audio`: 待检索音频
+**响应参数 (Base64 解码后)**：
+*字段位于 `payload.searchFeaRes.text*`
+| 字段 | 类型 | 描述 |
+| --- | --- | --- |
+| **scoreList** | array | 结果列表 |
+| **scoreList[n].score** | float | 相似度得分 |
+| **scoreList[n].featureId** | string | 特征 ID |
+---
+### 4.7 查询声纹特征列表 (queryFeatureList)
+**功能**：查询分组下的特征列表（可能受限制无法展示全部）。
+**请求参数核心字段**：
+* `func`: "queryFeatureList"
+* `groupId`: 目标分组
+**响应参数 (Base64 解码后)**：
+返回一个 JSON 数组，包含 `featureId` 和 `featureInfo`。
+---
+### 4.8 更新声纹特征 (updateFeature)
+**功能**：更新已存在的声纹特征。
+**请求参数核心字段**：
+* `func`: "updateFeature"
+* `groupId`: 分组 ID
+* `featureId`: 特征 ID
+* `featureInfo`: 新的特征描述
+* `cover`: boolean (可选). `true` 表示覆盖原有特征，`false` 表示合并更新。**默认为 true**。
+**响应参数 (Base64 解码后)**：
+* `msg`: "success"
+---
+## 5. 常见问题 (FAQ)
+**Q: 声纹识别 1:1 与 1:N 有什么区别？**
+**A:**
+* **1:1 (验证)**：证明“你是你”。用于实名制场景（如声纹解锁、支付）。
+* **1:N (检索)**：验证“你是谁”。用于办公考勤、会议签到等。
+**Q: 声纹识别是否需要读固定的文本？**
+**A:** 不需要，支持任意文本内容。
+**Q: 得分多少可以判定验证通过？**
+**A:** 建议参考范围 **0.6 - 1.0**。具体可根据应用场景的安全性要求调整。
+**Q: 不同 AppID 可以创建名称相同的声纹特征库吗？**
+**A:** 可以，每个 AppID 的数据是相互独立的。
+**Q: 与老版本有什么区别？**
+**A:** 新版引擎效果提升，但**数据不兼容**。
+---
