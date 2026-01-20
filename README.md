@@ -35,6 +35,23 @@
 
 ## 快速开始
 
+### 电脑重启后快速启动 ⚡
+
+```powershell
+# 一键启动所有服务（Redis + 后端 + Worker）
+.\scripts\start_all.ps1
+
+# 或者分别启动
+.\scripts\start_redis.ps1    # 1. 启动 Redis
+.\scripts\start_backend.ps1  # 2. 启动后端 API
+.\scripts\start_worker.ps1   # 3. 启动 Worker
+
+# 停止所有服务
+.\scripts\stop_all.ps1
+```
+
+详细说明: [电脑重启后快速启动指南](docs/QUICK_START_AFTER_REBOOT.md) ⭐
+
 ### 1. 环境要求
 
 - Python 3.11+
