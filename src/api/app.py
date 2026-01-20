@@ -104,3 +104,7 @@ def create_app() -> FastAPI:
 
     logger.info("FastAPI application created successfully")
     return app
+
+
+# 创建应用实例供 uvicorn 使用
+app = create_app()
