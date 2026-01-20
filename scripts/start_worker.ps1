@@ -14,7 +14,18 @@ if (-not $env:VIRTUAL_ENV) {
 # 检查 Redis 是否运行
 Write-Host "检查 Redis 连接..." -ForegroundColor Yellow
 try {
-    $result = redis-cli ping 2>$null
+    # 使用 Python 检测 Redis 连接
+    $testScript = @"
+import redis
+try:
+    r = redis.Redis(host='localhost', port=6379, socket_connect_timeout=1)
+    r.ping()
+    print('PONG')
+except:
+    print('FAIL')
+"@
+    
+    $result = python -c $testScript 2>$null
     if ($result -ne "PONG") {
         Write-Host "✗ Redis 未运行，请先启动 Redis" -ForegroundColor Red
         Write-Host "  运行: .\scripts\start_redis.ps1" -ForegroundColor Yellow
