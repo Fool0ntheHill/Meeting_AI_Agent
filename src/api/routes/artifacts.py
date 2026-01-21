@@ -359,12 +359,12 @@ async def update_artifact(
     # 更新 metadata，标记为手动编辑
     metadata = artifact.get_metadata_dict() or {}
     metadata["manually_edited"] = True
-    metadata["last_edited_at"] = datetime.utcnow().isoformat()
+    metadata["last_edited_at"] = datetime.now().isoformat()
     metadata["last_edited_by"] = user_id
     artifact.set_metadata_dict(metadata)
     
     # 更新任务的 last_content_modified_at
-    task.last_content_modified_at = datetime.utcnow()
+    task.last_content_modified_at = datetime.now()
     db.commit()
     
     logger.info(f"Artifact updated: {artifact_id}")
@@ -515,7 +515,7 @@ async def generate_artifact(
         logger.info(f"Artifact {generated_artifact.artifact_id} generated successfully (version {generated_artifact.version})")
         
         # 更新内容最后修改时间
-        task.last_content_modified_at = datetime.utcnow()
+        task.last_content_modified_at = datetime.now()
         db.commit()
         
         return GenerateArtifactResponse(

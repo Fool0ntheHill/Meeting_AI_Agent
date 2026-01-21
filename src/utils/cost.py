@@ -50,15 +50,13 @@ class CostTracker:
         else:
             asr_cost = audio_duration * self.pricing.volcano_asr_per_second
 
-        # 声纹识别成本
+        # 声纹识别成本（按次计费）
         voiceprint_cost = 0.0
         if enable_speaker_recognition:
-            total_sample_duration = (
-                self.pricing.estimated_speakers_count * 
-                self.pricing.estimated_sample_duration
-            )
+            # 每个说话人识别一次
             voiceprint_cost = (
-                total_sample_duration * self.pricing.iflytek_voiceprint_per_second
+                self.pricing.estimated_speakers_count * 
+                self.pricing.iflytek_voiceprint_per_call
             )
 
         # LLM 成本(基于预估 Token 数)
@@ -139,19 +137,17 @@ class CostTracker:
             price = self.pricing.volcano_asr_per_second
         return round(duration * price, 4)
 
-    def calculate_voiceprint_cost(self, sample_count: int, sample_duration: float) -> float:
+    def calculate_voiceprint_cost(self, speaker_count: int) -> float:
         """
-        计算声纹识别成本
+        计算声纹识别成本（按次计费）
 
         Args:
-            sample_count: 样本数量
-            sample_duration: 每个样本时长(秒)
+            speaker_count: 说话人数量（识别次数）
 
         Returns:
             float: 成本(元)
         """
-        total_duration = sample_count * sample_duration
-        return round(total_duration * self.pricing.iflytek_voiceprint_per_second, 4)
+        return round(speaker_count * self.pricing.iflytek_voiceprint_per_call, 4)
 
     def calculate_llm_cost(self, token_count: int, model: str = "gemini-flash") -> float:
         """

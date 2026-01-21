@@ -107,7 +107,7 @@ class ArtifactGenerationService:
                     logger.warning("Template repository not configured, using default template")
                     template = self._get_default_template(artifact_type, prompt_instance.language)
                 else:
-                    template = await self.templates.get(prompt_instance.template_id)
+                    template = self.templates.get_by_id(prompt_instance.template_id)
                     if not template:
                         raise ValidationError(f"模板不存在: {prompt_instance.template_id}")
             

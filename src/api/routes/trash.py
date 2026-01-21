@@ -117,7 +117,7 @@ async def delete_session(
     
     # 软删除
     task.is_deleted = True
-    task.deleted_at = datetime.utcnow()
+    task.deleted_at = datetime.now()
     db.commit()
     
     logger.info(f"Task {task_id} soft deleted by user {user_id}")
@@ -336,7 +336,7 @@ async def batch_delete_sessions(
         
         if task and task.user_id == user_id:
             task.is_deleted = True
-            task.deleted_at = datetime.utcnow()
+            task.deleted_at = datetime.now()
             deleted_count += 1
     
     db.commit()

@@ -104,8 +104,8 @@ pricing:
   volcano_asr_per_second: 0.00005
   azure_asr_per_second: 0.00006
   
-  # 声纹识别价格 (元/秒)
-  iflytek_voiceprint_per_second: 0.00003
+  # 声纹识别价格 (元/次) - 10万次200元
+  iflytek_voiceprint_per_call: 0.002
   
   # LLM 价格 (元/Token)
   gemini_flash_per_token: 0.00002

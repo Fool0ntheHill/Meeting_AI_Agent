@@ -172,8 +172,8 @@ class PricingConfig(BaseModel):
     volcano_asr_per_second: float = Field(default=0.00005, description="火山引擎 ASR 价格(元/秒)")
     azure_asr_per_second: float = Field(default=0.00006, description="Azure ASR 价格(元/秒)")
     
-    # 声纹识别价格 (元/秒)
-    iflytek_voiceprint_per_second: float = Field(default=0.00003, description="讯飞声纹识别价格(元/秒)")
+    # 声纹识别价格 (元/次) - 10万次200元
+    iflytek_voiceprint_per_call: float = Field(default=0.002, description="讯飞声纹识别价格(元/次)")
     
     # LLM 价格 (元/Token)
     gemini_flash_per_token: float = Field(default=0.00002, description="Gemini Flash 价格(元/Token)")
@@ -184,7 +184,7 @@ class PricingConfig(BaseModel):
     estimated_speakers_count: int = Field(default=3, description="平均说话人数量")
     estimated_sample_duration: float = Field(default=5.0, description="每个说话人样本时长(秒)")
 
-    @field_validator("volcano_asr_per_second", "azure_asr_per_second", "iflytek_voiceprint_per_second", 
+    @field_validator("volcano_asr_per_second", "azure_asr_per_second", "iflytek_voiceprint_per_call", 
                      "gemini_flash_per_token", "gemini_pro_per_token")
     @classmethod
     def validate_positive(cls, v: float) -> float:

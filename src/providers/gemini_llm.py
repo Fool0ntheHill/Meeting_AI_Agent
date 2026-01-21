@@ -30,6 +30,17 @@ from src.core.providers import LLMProvider
 logger = logging.getLogger(__name__)
 
 
+# 全局 System Instruction - 用于防幻觉和格式兼容性约束
+GLOBAL_SYSTEM_INSTRUCTION = """【底层约束】
+
+1. 核心原则：严格基于提供的【转写内容】生成回答，绝对不要编造转写中未提及的事实或细节。如果信息缺失，请直接说明或标记为 [???]。
+
+2. 格式兼容性：为了适配企业微信文档的粘贴格式，请严格遵守以下 Markdown 规范：
+   - 严禁使用 Checkbox 复选框语法（即禁止出现 "- [ ]" 或 "- [x]"）。
+   - 所有列表项（包括待办事项、行动项）必须强制使用标准的无序列表符号 "-" 开头。
+"""
+
+
 class GeminiLLM(LLMProvider):
     """Gemini LLM 提供商实现"""
 
@@ -107,10 +118,15 @@ class GeminiLLM(LLMProvider):
                 prompt_instance=prompt_instance,
                 formatted_transcript=formatted_transcript,
                 output_language=output_language,
+                meeting_date=kwargs.get("meeting_date"),
+                meeting_time=kwargs.get("meeting_time"),
             )
 
-            # 4. 调用 Gemini API
-            response_text, usage_metadata = await self._call_gemini_api(prompt)
+            # 4. 构建 JSON Schema（如果模板提供了）
+            response_schema = self._build_response_schema(template)
+
+            # 5. 调用 Gemini API
+            response_text, usage_metadata = await self._call_gemini_api(prompt, response_schema)
 
             # 5. 解析响应
             content_dict = self._parse_response(response_text, template.artifact_type)
@@ -155,6 +171,8 @@ class GeminiLLM(LLMProvider):
         prompt_instance: PromptInstance,
         formatted_transcript: str,
         output_language: OutputLanguage,
+        meeting_date: Optional[str] = None,
+        meeting_time: Optional[str] = None,
     ) -> str:
         """
         构建完整提示词
@@ -164,6 +182,8 @@ class GeminiLLM(LLMProvider):
             prompt_instance: 提示词实例
             formatted_transcript: 格式化后的转写文本
             output_language: 输出语言
+            meeting_date: 会议日期（可选）
+            meeting_time: 会议时间（可选）
 
         Returns:
             str: 完整提示词
@@ -177,14 +197,21 @@ class GeminiLLM(LLMProvider):
             if placeholder in prompt_body:
                 prompt_body = prompt_body.replace(placeholder, str(param_value))
 
-        # 3. 替换转写文本占位符
+        # 3. 添加会议元数据（如果有）
+        if meeting_date or meeting_time:
+            from src.utils.meeting_metadata import format_meeting_datetime
+            datetime_str = format_meeting_datetime(meeting_date, meeting_time)
+            if datetime_str:
+                prompt_body += f"\n\n## 会议时间\n{datetime_str}"
+
+        # 4. 替换转写文本占位符
         if "{transcript}" in prompt_body:
             prompt_body = prompt_body.replace("{transcript}", formatted_transcript)
         else:
             # 如果模板中没有 {transcript} 占位符，则追加到末尾
-            prompt_body += f"\n\n会议转写:\n{formatted_transcript}"
+            prompt_body += f"\n\n## 会议转写\n{formatted_transcript}"
 
-        # 4. 添加输出语言指令
+        # 5. 添加输出语言指令
         language_instruction = self._get_language_instruction(output_language)
         prompt_body += f"\n\n{language_instruction}"
 
@@ -207,13 +234,52 @@ class GeminiLLM(LLMProvider):
             OutputLanguage.KO_KR: "한국어로 회의록을 작성해 주세요.",
         }
         return language_map.get(output_language, "请使用中文生成会议纪要。")
+    
+    def _build_response_schema(self, template: PromptTemplate) -> Dict[str, Any]:
+        """
+        构建 Gemini 的 response_schema
+        
+        使用极简的 Markdown 格式 schema，保证：
+        1. 格式完全统一（只有 content 字段）
+        2. 内容完全灵活（Markdown 可以表达任何结构）
+        3. 100% 稳定（不会因为字段不匹配而失败）
+        
+        Args:
+            template: 提示词模板
+            
+        Returns:
+            Dict: JSON Schema 定义
+        """
+        # 极简的 Markdown schema - 适用于所有类型的 artifact
+        markdown_schema = {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "Markdown 格式的内容，可以包含任意结构的文本、列表、表格等"
+                },
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "标题"},
+                        "summary": {"type": "string", "description": "简短摘要"}
+                    },
+                    "description": "可选的元数据"
+                }
+            },
+            "required": ["content"]
+        }
+        
+        logger.info("Using universal Markdown schema for maximum flexibility")
+        return markdown_schema
 
-    async def _call_gemini_api(self, prompt: str) -> tuple[str, dict]:
+    async def _call_gemini_api(self, prompt: str, response_schema: Optional[Dict] = None) -> tuple[str, dict]:
         """
         调用 Gemini API(带指数退避重试)，使用结构化 JSON 输出
 
         Args:
             prompt: 提示词
+            response_schema: JSON Schema 定义（可选）
 
         Returns:
             tuple[str, dict]: (响应文本（JSON 格式）, 使用统计信息)
@@ -228,11 +294,18 @@ class GeminiLLM(LLMProvider):
         for attempt in range(self.config.max_retries):
             try:
                 # 配置生成参数 - 使用结构化 JSON 输出
-                config = types.GenerateContentConfig(
-                    max_output_tokens=self.config.max_tokens,
-                    temperature=self.config.temperature,
-                    response_mime_type="application/json",  # 强制 JSON 输出
-                )
+                config_params = {
+                    "max_output_tokens": self.config.max_tokens,
+                    "temperature": self.config.temperature,
+                    "response_mime_type": "application/json",  # 强制 JSON 输出
+                    "system_instruction": GLOBAL_SYSTEM_INSTRUCTION,  # 全局 System Instruction
+                }
+                
+                # 如果提供了 schema，添加到配置中
+                if response_schema:
+                    config_params["response_schema"] = response_schema
+                
+                config = types.GenerateContentConfig(**config_params)
 
                 # 调用 API
                 response = await asyncio.to_thread(

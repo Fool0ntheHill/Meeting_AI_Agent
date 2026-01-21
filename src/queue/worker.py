@@ -128,17 +128,25 @@ class TaskWorker:
         try:
             # 为这个任务创建 transcript 和 artifact repositories
             from src.database.session import session_scope
-            from src.database.repositories import TranscriptRepository, ArtifactRepository, SpeakerMappingRepository, SpeakerRepository
+            from src.database.repositories import (
+                TranscriptRepository, 
+                ArtifactRepository, 
+                SpeakerMappingRepository, 
+                SpeakerRepository,
+                PromptTemplateRepository
+            )
             
             with session_scope() as session:
                 transcript_repo = TranscriptRepository(session)
                 artifact_repo = ArtifactRepository(session)
                 speaker_mapping_repo = SpeakerMappingRepository(session)
                 speaker_repo = SpeakerRepository(session)
+                template_repo = PromptTemplateRepository(session)
                 
                 # 临时设置到 pipeline
                 self.pipeline_service.transcripts = transcript_repo
                 self.pipeline_service.artifact_generation.artifacts = artifact_repo
+                self.pipeline_service.artifact_generation.templates = template_repo
                 self.pipeline_service.speaker_mappings = speaker_mapping_repo
                 self.pipeline_service.speakers = speaker_repo
                 

@@ -63,15 +63,15 @@ def create_access_token(
     config = get_config()
     
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(hours=config.jwt_expire_hours)
+        expire = datetime.now() + timedelta(hours=config.jwt_expire_hours)
     
     payload = {
         "sub": user_id,  # Subject (用户 ID)
         "tenant_id": tenant_id,
         "exp": expire,  # Expiration time
-        "iat": datetime.utcnow(),  # Issued at
+        "iat": datetime.now(),  # Issued at
     }
     
     token = jwt.encode(

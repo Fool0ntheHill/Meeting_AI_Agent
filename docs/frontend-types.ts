@@ -61,6 +61,7 @@ export interface TranscriptResponse {
 export interface UploadResponse {
   success: boolean;
   file_path: string;
+  original_filename: string;  // 原始文件名 ✨ 新增
   file_size: number;
   duration?: number;
 }
@@ -118,7 +119,10 @@ export interface PromptInstance {
 export interface CreateTaskRequest {
   audio_files: string[];  // 文件路径列表
   file_order?: number[];
+  original_filenames?: string[];  // 原始文件名列表 ✨ 新增
   meeting_type: string;
+  meeting_date?: string;  // 会议日期，格式：YYYY-MM-DD ✨ 新增
+  meeting_time?: string;  // 会议时间，格式：HH:MM ✨ 新增
   asr_language?: string;  // 默认 "zh-CN+en-US"
   output_language?: string;  // 默认 "zh-CN"
   prompt_instance?: PromptInstance;

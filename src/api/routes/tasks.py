@@ -122,6 +122,9 @@ async def create_task(
             meeting_type=request.meeting_type,
             audio_files=request.audio_files,
             file_order=file_order,
+            original_filenames=request.original_filenames,  # 保存原始文件名
+            meeting_date=request.meeting_date,  # 保存会议日期
+            meeting_time=request.meeting_time,  # 保存会议时间
             asr_language=request.asr_language,
             output_language=request.output_language,
             skip_speaker_recognition=request.skip_speaker_recognition,

@@ -140,6 +140,30 @@ class PipelineService:
             "llm_tokens": 0,
         }
         
+        # 读取任务信息，获取会议元数据
+        meeting_date = None
+        meeting_time = None
+        original_filenames = None
+        
+        try:
+            from src.database.repositories import TaskRepository
+            from src.database.session import get_db_session
+            
+            with get_db_session() as db:
+                task_repo = TaskRepository(db)
+                task = task_repo.get_by_id(task_id)
+                if task:
+                    meeting_date = task.meeting_date
+                    meeting_time = task.meeting_time
+                    original_filenames = task.get_original_filenames_list()
+                    logger.info(
+                        f"Task {task_id}: Loaded metadata from DB - "
+                        f"date={meeting_date}, time={meeting_time}, "
+                        f"filenames={original_filenames}"
+                    )
+        except Exception as e:
+            logger.warning(f"Task {task_id}: Failed to load task metadata: {e}")
+        
         try:
             # 1. 转写阶段
             logger.info(f"Task {task_id}: Starting transcription phase")
@@ -161,6 +185,37 @@ class PipelineService:
                 f"audio_url={audio_url[:100]}..., "
                 f"local_audio_path={local_audio_path}"
             )
+            
+            # 提取会议元数据（在转写完成后）
+            if not meeting_date:
+                from src.utils.meeting_metadata import extract_meeting_metadata
+                extracted_date, extracted_time = extract_meeting_metadata(
+                    original_filenames=original_filenames,
+                    meeting_date=meeting_date,
+                    meeting_time=meeting_time,
+                )
+                meeting_date = extracted_date or meeting_date
+                # 只有用户明确提供时才使用时间
+                if not meeting_time and extracted_time:
+                    meeting_time = extracted_time
+                
+                logger.info(f"Task {task_id}: Meeting metadata - date={meeting_date}, time={meeting_time}")
+                
+                # 保存提取的元数据到数据库
+                try:
+                    from src.database.repositories import TaskRepository
+                    from src.database.session import get_db_session
+                    
+                    with get_db_session() as db:
+                        task_repo = TaskRepository(db)
+                        task = task_repo.get_by_id(task_id)
+                        if task:
+                            task.meeting_date = meeting_date
+                            task.meeting_time = meeting_time
+                            db.commit()
+                            logger.info(f"Task {task_id}: Meeting metadata saved to database")
+                except Exception as e:
+                    logger.warning(f"Task {task_id}: Failed to save meeting metadata: {e}")
             
             # 保存转写记录到数据库
             if self.transcripts is not None:
@@ -269,6 +324,8 @@ class PipelineService:
                 output_language=output_language,
                 user_id=user_id,
                 template=template,
+                meeting_date=meeting_date,  # 传入会议日期
+                meeting_time=meeting_time,  # 传入会议时间
             )
             
             logger.info(
@@ -422,9 +479,9 @@ class PipelineService:
             
             voiceprint_cost = 0.0
             if actual_usage["voiceprint_samples"] > 0:
+                # 声纹识别按次计费，每个说话人识别一次
                 voiceprint_cost = self.cost_tracker.calculate_voiceprint_cost(
-                    sample_count=actual_usage["voiceprint_samples"],
-                    sample_duration=actual_usage["voiceprint_duration"] / actual_usage["voiceprint_samples"]
+                    speaker_count=actual_usage["voiceprint_samples"]
                 )
             
             llm_cost = 0.0

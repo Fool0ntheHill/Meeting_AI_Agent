@@ -91,7 +91,7 @@ async def correct_transcript(
     )
     
     # 更新内容最后修改时间
-    task.last_content_modified_at = datetime.utcnow()
+    task.last_content_modified_at = datetime.now()
     db.commit()
     
     logger.info(f"Transcript corrected for task {task.task_id}")
@@ -186,7 +186,7 @@ async def correct_speakers(
         logger.info(f"Updated transcript segments with new speaker names")
     
     # 更新内容最后修改时间
-    task.last_content_modified_at = datetime.utcnow()
+    task.last_content_modified_at = datetime.now()
     db.commit()
     
     # 重新生成衍生内容
@@ -339,7 +339,7 @@ async def regenerate_artifact(
         logger.info(f"Artifact {generated_artifact.artifact_id} regenerated successfully (version {generated_artifact.version})")
         
         # 更新内容最后修改时间
-        task.last_content_modified_at = datetime.utcnow()
+        task.last_content_modified_at = datetime.now()
         db.commit()
         
         return GenerateArtifactResponse(
@@ -460,7 +460,7 @@ async def confirm_task(
     watermark = {
         "confirmed_by_id": request.responsible_person["id"],
         "confirmed_by_name": request.responsible_person["name"],
-        "confirmed_at": datetime.utcnow().isoformat(),
+        "confirmed_at": datetime.now().isoformat(),
         "confirmation_items": request.confirmation_items,
     }
     

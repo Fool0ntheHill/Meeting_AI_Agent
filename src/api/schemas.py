@@ -24,7 +24,10 @@ class CreateTaskRequest(BaseModel):
 
     audio_files: List[str] = Field(..., min_length=1, description="音频文件 URL 列表")
     file_order: Optional[List[int]] = Field(None, description="文件排序索引")
+    original_filenames: Optional[List[str]] = Field(None, description="原始文件名列表")
     meeting_type: str = Field(..., description="会议类型")
+    meeting_date: Optional[str] = Field(None, description="会议日期，格式：YYYY-MM-DD")
+    meeting_time: Optional[str] = Field(None, description="会议时间，格式：HH:MM")
     asr_language: str = Field(default="zh-CN+en-US", description="ASR 识别语言")
     output_language: str = Field(default="zh-CN", description="输出语言")
     prompt_instance: Optional[PromptInstance] = Field(None, description="提示词实例")
@@ -35,7 +38,10 @@ class CreateTaskRequest(BaseModel):
             "example": {
                 "audio_files": ["https://tos.example.com/meeting.wav"],
                 "file_order": [0],
+                "original_filenames": ["meeting_20260121_1430.wav"],
                 "meeting_type": "weekly_sync",
+                "meeting_date": "2026-01-21",
+                "meeting_time": "14:30",
                 "asr_language": "zh-CN+en-US",
                 "output_language": "zh-CN",
                 "prompt_instance": {

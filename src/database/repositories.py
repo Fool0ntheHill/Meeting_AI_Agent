@@ -48,8 +48,8 @@ class UserRepository:
             username=username,
             tenant_id=tenant_id,
             is_active=is_active,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
         )
         self.session.add(user)
         self.session.flush()
@@ -67,8 +67,8 @@ class UserRepository:
         """更新最后登录时间"""
         user = self.get_by_id(user_id)
         if user:
-            user.last_login_at = datetime.utcnow()
-            user.updated_at = datetime.utcnow()
+            user.last_login_at = datetime.now()
+            user.updated_at = datetime.now()
             self.session.flush()
         return user
 
@@ -77,7 +77,7 @@ class UserRepository:
         user = self.get_by_id(user_id)
         if user:
             user.is_active = False
-            user.updated_at = datetime.utcnow()
+            user.updated_at = datetime.now()
             self.session.flush()
         return user
 
@@ -96,6 +96,9 @@ class TaskRepository:
         meeting_type: str,
         audio_files: List[str],
         file_order: List[int],
+        original_filenames: Optional[List[str]] = None,
+        meeting_date: Optional[str] = None,
+        meeting_time: Optional[str] = None,
         asr_language: str = "zh-CN+en-US",
         output_language: str = "zh-CN",
         skip_speaker_recognition: bool = False,
@@ -110,6 +113,9 @@ class TaskRepository:
             meeting_type=meeting_type,
             audio_files=json.dumps(audio_files),
             file_order=json.dumps(file_order),
+            original_filenames=json.dumps(original_filenames, ensure_ascii=False) if original_filenames else None,
+            meeting_date=meeting_date,
+            meeting_time=meeting_time,
             asr_language=asr_language,
             output_language=output_language,
             skip_speaker_recognition=skip_speaker_recognition,
@@ -158,10 +164,10 @@ class TaskRepository:
                 task.progress = progress
             if error_details is not None:
                 task.error_details = error_details
-            task.updated_at = datetime.utcnow()
+            task.updated_at = datetime.now()
             
             if state in ["success", "failed", "partial_success"]:
-                task.completed_at = datetime.utcnow()
+                task.completed_at = datetime.now()
             
             self.session.flush()
             logger.info(f"Task state updated: {task_id} -> {state}")
@@ -192,12 +198,12 @@ class TaskRepository:
         task.is_confirmed = True
         task.confirmed_by = confirmed_by
         task.confirmed_by_name = confirmed_by_name
-        task.confirmed_at = datetime.utcnow()
+        task.confirmed_at = datetime.now()
         task.set_confirmation_items_dict(confirmation_items)
         
         # 更新任务状态为 ARCHIVED
         task.state = "archived"
-        task.updated_at = datetime.utcnow()
+        task.updated_at = datetime.now()
         
         self.session.flush()
         logger.info(f"Task confirmed and archived: {task_id} by {confirmed_by_name}")
@@ -302,7 +308,7 @@ class SpeakerRepository:
         if speaker:
             # 更新现有说话人
             speaker.display_name = display_name
-            speaker.updated_at = datetime.utcnow()
+            speaker.updated_at = datetime.now()
         else:
             # 创建新说话人
             speaker = Speaker(
@@ -375,7 +381,7 @@ class SpeakerMappingRepository:
             mapping.is_corrected = is_corrected
             if is_corrected:
                 mapping.corrected_by = corrected_by
-                mapping.corrected_at = datetime.utcnow()
+                mapping.corrected_at = datetime.now()
         else:
             # 创建新映射
             mapping = SpeakerMapping(
@@ -386,7 +392,7 @@ class SpeakerMappingRepository:
                 confidence=confidence,
                 is_corrected=is_corrected,
                 corrected_by=corrected_by,
-                corrected_at=datetime.utcnow() if is_corrected else None,
+                corrected_at=datetime.now() if is_corrected else None,
             )
             self.session.add(mapping)
 
@@ -426,7 +432,7 @@ class SpeakerMappingRepository:
         if mapping:
             mapping.speaker_name = speaker_name
             mapping.is_corrected = True
-            mapping.corrected_at = datetime.utcnow()
+            mapping.corrected_at = datetime.now()
             self.session.flush()
             logger.info(f"Speaker name updated: {task_id} - {speaker_label} -> {speaker_name}")
 
@@ -631,7 +637,7 @@ class PromptTemplateRepository:
         if parameter_schema is not None:
             template.set_parameter_schema_dict(parameter_schema)
         
-        template.updated_at = datetime.utcnow()
+        template.updated_at = datetime.now()
         self.session.flush()
         logger.info(f"Prompt template updated: {template_id}")
         return template
@@ -870,7 +876,7 @@ class HotwordSetRepository:
                 hotword_set.word_count = word_count
             if word_size is not None:
                 hotword_set.word_size = word_size
-            hotword_set.updated_at = datetime.utcnow()
+            hotword_set.updated_at = datetime.now()
             self.session.flush()
             logger.info(f"Hotword set updated: {hotword_set_id}")
         return hotword_set

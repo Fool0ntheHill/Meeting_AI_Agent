@@ -75,8 +75,9 @@ def test_cost_tracker_calculate_voiceprint_cost():
     """Test CostTracker.calculate_voiceprint_cost()"""
     tracker = CostTracker()
     
-    cost = tracker.calculate_voiceprint_cost(sample_count=3, sample_duration=5)
-    expected = round(15 * 0.00003, 4)
+    # 声纹识别按次计费：10万次200元，即每次0.002元
+    cost = tracker.calculate_voiceprint_cost(speaker_count=3)
+    expected = round(3 * 0.002, 4)
     assert cost == expected
 
 

@@ -27,8 +27,8 @@ class Folder(Base):
     owner_tenant_id = Column(String(64), nullable=False, index=True)
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
     # 关系
     parent = relationship("Folder", remote_side="Folder.folder_id", backref="children")

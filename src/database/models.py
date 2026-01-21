@@ -39,8 +39,8 @@ class Folder(Base):
     owner_tenant_id = Column(String(64), nullable=False, index=True)
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
     # 关系
     parent = relationship("Folder", remote_side="Folder.folder_id", backref="children")
@@ -70,8 +70,8 @@ class Speaker(Base):
     created_by = Column(String(64), nullable=False, index=True)
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
     # 索引
     __table_args__ = (
@@ -94,8 +94,8 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True)
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
     last_login_at = Column(DateTime, nullable=True)
 
     # 索引
@@ -121,6 +121,11 @@ class Task(Base):
     # 音频文件信息 (JSON 数组)
     audio_files = Column(Text, nullable=False)  # JSON: ["file1.ogg", "file2.ogg"]
     file_order = Column(Text, nullable=False)  # JSON: [0, 1]
+    original_filenames = Column(Text, nullable=True)  # JSON: ["meeting_20260121.ogg", "meeting_20260121_part2.ogg"]
+    
+    # 会议元数据（可选）
+    meeting_date = Column(String(32), nullable=True)  # 会议日期，如 "2026-01-21"
+    meeting_time = Column(String(32), nullable=True)  # 会议时间，如 "14:30"
 
     # 语言配置
     asr_language = Column(String(32), nullable=False, default="zh-CN+en-US")
@@ -150,8 +155,8 @@ class Task(Base):
     deleted_at = Column(DateTime, nullable=True)
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
     completed_at = Column(DateTime, nullable=True)
     last_content_modified_at = Column(DateTime, nullable=True, index=True)  # 内容最后修改时间
 
@@ -178,6 +183,10 @@ class Task(Base):
     def get_file_order_list(self) -> list[int]:
         """解析 file_order JSON"""
         return json.loads(self.file_order) if self.file_order else []
+    
+    def get_original_filenames_list(self) -> list[str]:
+        """解析 original_filenames JSON"""
+        return json.loads(self.original_filenames) if self.original_filenames else []
 
     def set_audio_files_list(self, files: list[str]) -> None:
         """设置 audio_files JSON"""
@@ -186,6 +195,10 @@ class Task(Base):
     def set_file_order_list(self, order: list[int]) -> None:
         """设置 file_order JSON"""
         self.file_order = json.dumps(order)
+    
+    def set_original_filenames_list(self, filenames: list[str]) -> None:
+        """设置 original_filenames JSON"""
+        self.original_filenames = json.dumps(filenames, ensure_ascii=False)
 
     def get_confirmation_items_dict(self) -> dict:
         """解析 confirmation_items JSON"""
@@ -220,7 +233,7 @@ class TranscriptRecord(Base):
     is_corrected = Column(Boolean, nullable=False, default=False)
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
 
     # 关系
     task = relationship("Task", back_populates="transcripts")
@@ -257,7 +270,7 @@ class SpeakerMapping(Base):
     corrected_at = Column(DateTime, nullable=True)
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
 
     # 关系
     task = relationship("Task", back_populates="speaker_mappings")
@@ -296,8 +309,8 @@ class PromptTemplateRecord(Base):
     scope_id = Column(String(64), nullable=True, index=True)  # user_id for private templates
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
     def get_supported_languages_list(self) -> list[str]:
         """解析 supported_languages JSON"""
@@ -342,7 +355,7 @@ class GeneratedArtifactRecord(Base):
 
     # 创建信息
     created_by = Column(String(64), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
 
     # 关系
     task = relationship("Task", back_populates="artifacts")
@@ -404,8 +417,8 @@ class HotwordSetRecord(Base):
     word_size = Column(Integer, nullable=True)  # 热词总字符数
     
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
     # 索引
     __table_args__ = (
@@ -439,7 +452,7 @@ class AuditLogRecord(Base):
     cost_currency = Column(String(8), nullable=True, default="USD")
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True)
 
     # 索引
     __table_args__ = (

@@ -27,6 +27,7 @@ class UploadResponse(BaseModel):
     """上传响应"""
     success: bool
     file_path: str
+    original_filename: str  # 原始文件名
     file_size: int
     duration: Optional[float] = None
     message: str = "文件上传成功"
@@ -117,6 +118,7 @@ async def upload_audio(
         return UploadResponse(
             success=True,
             file_path=relative_path,
+            original_filename=file.filename,  # 保存原始文件名
             file_size=file_size,
             duration=duration,
             message=f"文件上传成功: {file.filename}"
