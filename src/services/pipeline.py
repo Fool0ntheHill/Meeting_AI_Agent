@@ -38,6 +38,9 @@ class PipelineService:
         correction_service: CorrectionService,
         artifact_generation_service: ArtifactGenerationService,
         task_repo=None,
+        transcript_repo=None,
+        speaker_mapping_repo=None,
+        speaker_repo=None,
         audit_logger=None,
         pricing_config: Optional[PricingConfig] = None,
     ):
@@ -50,6 +53,9 @@ class PipelineService:
             correction_service: 修正服务
             artifact_generation_service: 衍生内容生成服务
             task_repo: 任务仓库(可选,Phase 1 可为 None)
+            transcript_repo: 转写记录仓库(可选)
+            speaker_mapping_repo: 说话人映射仓库(可选)
+            speaker_repo: 说话人仓库(可选)
             audit_logger: 审计日志记录器(可选)
             pricing_config: 价格配置(可选)
         """
@@ -58,6 +64,9 @@ class PipelineService:
         self.correction = correction_service
         self.artifact_generation = artifact_generation_service
         self.tasks = task_repo
+        self.transcripts = transcript_repo
+        self.speaker_mappings = speaker_mapping_repo
+        self.speakers = speaker_repo
         self.audit_logger = audit_logger
         self.cost_tracker = CostTracker(pricing_config) if pricing_config else CostTracker()
 
@@ -153,6 +162,20 @@ class PipelineService:
                 f"local_audio_path={local_audio_path}"
             )
             
+            # 保存转写记录到数据库
+            if self.transcripts is not None:
+                try:
+                    import uuid
+                    transcript_id = f"transcript_{uuid.uuid4().hex[:16]}"
+                    self.transcripts.create(
+                        transcript_id=transcript_id,
+                        task_id=task_id,
+                        transcript_result=transcript,
+                    )
+                    logger.info(f"Task {task_id}: Transcript saved to database: {transcript_id}")
+                except Exception as e:
+                    logger.warning(f"Task {task_id}: Failed to save transcript to database: {e}")
+            
             # 记录实际 ASR 使用
             actual_usage["asr_provider"] = transcript.provider
             actual_usage["asr_duration"] = transcript.duration
@@ -175,6 +198,24 @@ class PipelineService:
                     f"identified {len(speaker_mapping)} speakers: {speaker_mapping}"
                 )
                 
+                # 保存 speaker mapping 到数据库
+                if self.speaker_mappings is not None and speaker_mapping:
+                    try:
+                        for speaker_label, speaker_id in speaker_mapping.items():
+                            # speaker_label: "Speaker 1", "Speaker 2"
+                            # speaker_id: "speaker_linyudong", "speaker_lanweiyi"
+                            # 暂时使用 speaker_id 作为 speaker_name，后续会通过 API 关联真实姓名
+                            self.speaker_mappings.create_or_update(
+                                task_id=task_id,
+                                speaker_label=speaker_label,
+                                speaker_name=speaker_id,  # 先存储声纹 ID
+                                speaker_id=speaker_id,
+                                confidence=None,  # TODO: 从识别结果获取置信度
+                            )
+                        logger.info(f"Task {task_id}: Speaker mappings saved to database")
+                    except Exception as e:
+                        logger.warning(f"Task {task_id}: Failed to save speaker mappings: {e}")
+                
                 # 记录实际声纹识别使用
                 actual_usage["voiceprint_samples"] = len(speaker_mapping)
                 # 假设每个说话人样本 5 秒
@@ -189,6 +230,30 @@ class PipelineService:
                 
                 transcript = await self.correction.correct_speakers(transcript, speaker_mapping)
                 logger.info(f"Task {task_id}: Speaker correction completed")
+                
+                # 3.5. 替换成真实姓名（用于 LLM 生成）
+                if self.speakers is not None:
+                    try:
+                        # 获取声纹 ID 列表
+                        speaker_ids = list(speaker_mapping.values())
+                        
+                        # 批量查询真实姓名
+                        display_names = self.speakers.get_display_names_batch(speaker_ids)
+                        
+                        if display_names:
+                            # 创建新的映射：speaker_linyudong -> 林煜东
+                            # 注意：第一次修正后，transcript 中的 speaker 已经是 speaker_id 了
+                            real_name_mapping = {}
+                            for speaker_id, display_name in display_names.items():
+                                real_name_mapping[speaker_id] = display_name
+                            
+                            # 再次修正 transcript，替换成真实姓名
+                            transcript = await self.correction.correct_speakers(transcript, real_name_mapping)
+                            logger.info(
+                                f"Task {task_id}: Speaker names replaced with real names: {real_name_mapping}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Task {task_id}: Failed to replace with real names: {e}")
             else:
                 logger.info(f"Task {task_id}: No speaker mapping, skipping correction phase")
             

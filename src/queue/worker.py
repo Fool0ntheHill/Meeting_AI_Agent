@@ -8,6 +8,7 @@ import signal
 import sys
 import time
 import logging
+import asyncio
 from typing import Optional
 from datetime import datetime
 
@@ -92,7 +93,8 @@ class TaskWorker:
                     logger.info(f"Processing task: {task_id}")
                     
                     try:
-                        self._process_task(task_id, task_data)
+                        # Run async _process_task in event loop
+                        asyncio.run(self._process_task(task_id, task_data))
                     except Exception as e:
                         logger.error(f"Task {task_id} failed: {e}", exc_info=True)
                         self._mark_task_failed(task_id, str(e))
@@ -110,7 +112,7 @@ class TaskWorker:
         
         logger.info("TaskWorker stopped")
     
-    def _process_task(self, task_id: str, task_data: dict):
+    async def _process_task(self, task_id: str, task_data: dict):
         """
         处理单个任务
         
@@ -124,19 +126,38 @@ class TaskWorker:
         self._update_task_state(task_id, TaskState.RUNNING)
         
         try:
-            # 执行管线
-            result = self.pipeline_service.process_meeting(
-                task_id=task_id,
-                audio_files=task_data["audio_files"],
-                file_order=task_data.get("file_order"),
-                meeting_type=task_data.get("meeting_type", "common"),
-                enable_speaker_recognition=task_data.get("enable_speaker_recognition", True),
-                enable_correction=task_data.get("enable_correction", True),
-                prompt_instance=task_data.get("prompt_instance"),
-                hotword_sets=task_data.get("hotword_sets"),
-                asr_language=task_data.get("asr_language", "zh-CN+en-US"),
-                output_language=task_data.get("output_language", "zh-CN"),
-            )
+            # 为这个任务创建 transcript 和 artifact repositories
+            from src.database.session import session_scope
+            from src.database.repositories import TranscriptRepository, ArtifactRepository, SpeakerMappingRepository, SpeakerRepository
+            
+            with session_scope() as session:
+                transcript_repo = TranscriptRepository(session)
+                artifact_repo = ArtifactRepository(session)
+                speaker_mapping_repo = SpeakerMappingRepository(session)
+                speaker_repo = SpeakerRepository(session)
+                
+                # 临时设置到 pipeline
+                self.pipeline_service.transcripts = transcript_repo
+                self.pipeline_service.artifact_generation.artifacts = artifact_repo
+                self.pipeline_service.speaker_mappings = speaker_mapping_repo
+                self.pipeline_service.speakers = speaker_repo
+                
+                # 执行管线
+                result = await self.pipeline_service.process_meeting(
+                    task_id=task_id,
+                    user_id=task_data["user_id"],
+                    audio_files=task_data["audio_files"],
+                    file_order=task_data.get("file_order", []),
+                    prompt_instance=task_data.get("prompt_instance"),  # This is required by pipeline
+                    tenant_id=task_data.get("tenant_id", "default"),
+                    asr_language=task_data.get("asr_language", "zh-CN+en-US"),
+                    output_language=task_data.get("output_language", "zh-CN"),
+                    skip_speaker_recognition=not task_data.get("enable_speaker_recognition", True),
+                    hotword_set_id=task_data.get("hotword_set_id"),
+                )
+                # 显式提交 session 以确保转写记录和 artifact 被保存
+                session.commit()
+                logger.info(f"Task {task_id}: Session committed, transcript and artifact saved")
             
             # 更新任务状态为 SUCCESS
             self._update_task_state(task_id, TaskState.SUCCESS)
@@ -168,8 +189,8 @@ class TaskWorker:
                 task_repo = TaskRepository(session)
                 task_repo.update_state(
                     task_id=task_id,
-                    state=state,
-                    error_message=error_message,
+                    state=state.value,  # Convert enum to string
+                    error_details=error_message,  # Use error_details instead of error_message
                 )
             logger.info(f"Updated task {task_id} state to {state.value}")
         except Exception as e:

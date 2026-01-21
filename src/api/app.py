@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """FastAPI application factory."""
 
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.middleware import ErrorHandlerMiddleware, LoggingMiddleware
 from src.api.routes import api_router
@@ -44,6 +46,18 @@ def create_app() -> FastAPI:
 
     # 注册路由
     app.include_router(api_router, prefix="/api/v1")
+
+    # 挂载静态文件目录（用于音频文件访问）
+    uploads_dir = Path("uploads")
+    if uploads_dir.exists():
+        app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+        logger.info(f"Mounted static files: /uploads -> {uploads_dir.absolute()}")
+    else:
+        logger.warning(f"Uploads directory not found: {uploads_dir.absolute()}")
+        # 创建目录
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+        logger.info(f"Created and mounted uploads directory: {uploads_dir.absolute()}")
 
     # 全局异常处理 - 业务异常
     @app.exception_handler(MeetingAgentError)

@@ -133,6 +133,8 @@ async def create_task(
         
         # 推送到消息队列
         task_data = {
+            "user_id": user_id,  # Add user_id for pipeline
+            "tenant_id": tenant_id,  # Add tenant_id for pipeline
             "audio_files": request.audio_files,
             "file_order": file_order,
             "meeting_type": request.meeting_type,
@@ -310,6 +312,7 @@ async def get_task_detail(
         progress=task.progress,
         error_details=task.error_details,
         duration=duration,
+        folder_id=task.folder_id,  # Add folder_id
         created_at=task.created_at,
         updated_at=task.updated_at,
         completed_at=task.completed_at,
@@ -330,7 +333,7 @@ async def get_transcript(
         db: 数据库会话
         
     Returns:
-        TranscriptResponse: 转写文本信息
+        TranscriptResponse: 转写文本信息（包含 speaker_mapping）
         
     Raises:
         HTTPException: 404 如果转写文本不存在
@@ -342,17 +345,19 @@ async def get_transcript(
             detail=f"任务尚未完成转写，当前状态: {task.state}",
         )
     
-    # 从 transcript_data 字段获取转写数据
-    transcript_data = task.get_transcript_data()
-    if not transcript_data:
+    # 从 transcripts 关系获取转写记录
+    if not task.transcripts or len(task.transcripts) == 0:
         raise HTTPException(
             status_code=404,
             detail="转写文本不存在",
         )
     
+    # 获取最新的转写记录
+    transcript_record = task.transcripts[0]
+    
     # 解析转写片段
     segments = []
-    for seg in transcript_data.get("segments", []):
+    for seg in transcript_record.get_segments_list():
         segments.append(
             TranscriptSegment(
                 text=seg.get("text", ""),
@@ -364,17 +369,40 @@ async def get_transcript(
         )
     
     # 构建完整文本
-    full_text = transcript_data.get("full_text", "")
+    full_text = transcript_record.full_text
     if not full_text and segments:
         full_text = " ".join(seg.text for seg in segments)
+    
+    # 获取 speaker mapping（声纹 ID -> 真实姓名）
+    from src.database.repositories import SpeakerMappingRepository, SpeakerRepository
+    
+    speaker_mapping_repo = SpeakerMappingRepository(db)
+    speaker_repo = SpeakerRepository(db)
+    
+    # 获取任务的 speaker mappings（Speaker 1 -> speaker_linyudong）
+    task_mappings = speaker_mapping_repo.get_by_task_id(task.task_id)
+    
+    # 构建最终的 speaker_mapping（Speaker 1 -> 林煜东）
+    speaker_mapping = {}
+    for mapping in task_mappings:
+        # mapping.speaker_label: "Speaker 1"
+        # mapping.speaker_id: "speaker_linyudong"
+        # 查询真实姓名
+        display_name = speaker_repo.get_display_name(mapping.speaker_id)
+        if display_name:
+            speaker_mapping[mapping.speaker_label] = display_name
+        else:
+            # 如果没有找到真实姓名，使用 speaker_id
+            speaker_mapping[mapping.speaker_label] = mapping.speaker_id
     
     return TranscriptResponse(
         task_id=task.task_id,
         segments=segments,
         full_text=full_text,
-        duration=transcript_data.get("duration", 0.0),
-        language=transcript_data.get("language", task.asr_language),
-        provider=transcript_data.get("provider", "volcano"),
+        duration=transcript_record.duration,
+        language=transcript_record.language,
+        provider=transcript_record.provider,
+        speaker_mapping=speaker_mapping if speaker_mapping else None,
     )
 
 
@@ -447,6 +475,7 @@ async def list_tasks(
             progress=task.progress,
             error_details=task.error_details,
             duration=duration,
+            folder_id=task.folder_id,  # Add folder_id
             created_at=task.created_at,
             updated_at=task.updated_at,
             completed_at=task.completed_at,

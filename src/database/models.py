@@ -54,6 +54,32 @@ class Folder(Base):
     )
 
 
+class Speaker(Base):
+    """说话人表 - 存储声纹 ID 到真实姓名的映射"""
+
+    __tablename__ = "speakers"
+
+    # 主键
+    speaker_id = Column(String(64), primary_key=True, index=True)  # 声纹 ID，如 speaker_linyudong
+
+    # 说话人信息
+    display_name = Column(String(128), nullable=False)  # 真实姓名，如 "林煜东"
+    tenant_id = Column(String(64), nullable=False, index=True)
+
+    # 创建者信息
+    created_by = Column(String(64), nullable=False, index=True)
+
+    # 时间戳
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 索引
+    __table_args__ = (
+        Index("idx_speaker_tenant", "tenant_id"),
+        Index("idx_speaker_created_by", "created_by"),
+    )
+
+
 class User(Base):
     """用户表"""
 

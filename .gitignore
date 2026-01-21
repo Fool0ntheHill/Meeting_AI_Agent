@@ -30,10 +30,31 @@ ENV/
 .coverage
 htmlcov/
 
-# 以下文件都会提交到 Git（私有仓库）
-# ✅ config/*.yaml - 配置文件（包含 API 密钥）
-# ✅ .env - 环境变量
-# ✅ *.db - 数据库文件（包含测试数据）
-# ✅ uploads/ - 上传的文件
-# ✅ *.log - 日志文件
-# ✅ temp/ - 临时文件
+# SQLite 临时文件（自动生成，不应提交）
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 敏感配置和数据（不应提交到公开仓库）
+.env
+config/development.yaml
+config/production.yaml
+config/test.yaml
+
+# 数据库文件（包含用户数据）
+*.db
+
+# 上传的文件（包含用户内容）
+uploads/
+
+# 日志文件（可能包含敏感信息）
+*.log
+logs/
+
+# 临时文件
+temp/
+tmp/
+
+# 保留示例配置文件供参考
+!config/*.example
+!.env.example

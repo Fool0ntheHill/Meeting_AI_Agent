@@ -56,9 +56,38 @@ class AzureASR(ASRProvider):
             # 下载音频文件
             audio_data = await self._download_audio(audio_url)
 
-            # 检查音频时长,超过 2 小时需要切分
-            duration = self.audio_processor.get_duration(audio_data)
-            logger.info(f"Azure ASR audio duration: {duration}s")
+            # 保存到临时文件
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
+                temp_input_path = temp_file.name
+                temp_file.write(audio_data)
+            
+            try:
+                # 转换为 WAV 格式（Azure ASR 需要 WAV）
+                logger.info(f"Converting audio to WAV format for Azure ASR")
+                temp_wav_path = await self.audio_processor.convert_format(temp_input_path)
+                
+                # 读取转换后的 WAV 数据
+                with open(temp_wav_path, 'rb') as f:
+                    audio_data = f.read()
+                
+                # 获取音频时长
+                duration = self.audio_processor.get_duration(temp_wav_path)
+                logger.info(f"Azure ASR audio duration: {duration}s")
+                
+                # 清理 WAV 临时文件
+                try:
+                    os.unlink(temp_wav_path)
+                except:
+                    pass
+            finally:
+                # 清理输入临时文件
+                try:
+                    os.unlink(temp_input_path)
+                except:
+                    pass
 
             if duration > 7200:  # 2 小时
                 # 切分音频并分别转写
@@ -179,9 +208,10 @@ class AzureASR(ASRProvider):
             definition["phraseList"] = {"phrases": phrases}
 
         # 准备 multipart/form-data
+        import json
         files = {
             "audio": ("audio.wav", audio_data, "audio/wav"),
-            "definition": (None, str(definition).replace("'", '"'), "application/json"),
+            "definition": (None, json.dumps(definition), "application/json"),
         }
 
         # 发送请求(带重试和密钥轮换)
@@ -210,6 +240,9 @@ class AzureASR(ASRProvider):
                         if attempt == self.config.max_retries - 1:
                             raise RateLimitError("Azure ASR rate limit exceeded")
                     else:
+                        # 记录详细的错误信息
+                        logger.error(f"Azure ASR error: {response.status_code}")
+                        logger.error(f"Response body: {response.text}")
                         response.raise_for_status()
 
             except httpx.HTTPError as e:

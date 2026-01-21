@@ -41,6 +41,7 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter()
+standalone_router = APIRouter()  # 独立的 artifacts 路由，不需要 task_id 前缀
 
 
 # ============================================================================
@@ -203,6 +204,176 @@ async def get_artifact_detail(
     logger.info(f"Artifact detail retrieved: {artifact_id}")
     
     return ArtifactDetailResponse(artifact=artifact_model)
+
+
+# ============================================================================
+# Standalone Artifact Routes (without task_id in path)
+# ============================================================================
+
+
+@standalone_router.get("/{artifact_id}")
+async def get_artifact_by_id(
+    artifact_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    通过 artifact_id 直接获取衍生内容详情
+    
+    这是一个独立的路由，不需要 task_id。
+    会验证 artifact 所属的 task 是否属于当前用户。
+    
+    Args:
+        artifact_id: 衍生内容 ID
+        user_id: 当前用户 ID (来自依赖注入)
+        db: 数据库会话
+        
+    Returns:
+        Dict: 衍生内容详情（content 字段已解析为字典）
+        
+    Raises:
+        HTTPException: 404 如果衍生内容不存在
+        HTTPException: 403 如果无权访问
+    """
+    logger.info(f"Getting artifact by ID: {artifact_id} for user {user_id}")
+    
+    # 获取衍生内容
+    artifact_repo = ArtifactRepository(db)
+    artifact = artifact_repo.get_by_id(artifact_id)
+    
+    if not artifact:
+        raise HTTPException(status_code=404, detail="衍生内容不存在")
+    
+    # 验证所属任务的所有权
+    task_repo = TaskRepository(db)
+    task = task_repo.get_by_id(artifact.task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="关联的任务不存在")
+    
+    if task.user_id != user_id:
+        raise HTTPException(status_code=403, detail="无权访问此衍生内容")
+    
+    # 转换为 GeneratedArtifact 模型
+    artifact_model = artifact_repo.to_generated_artifact(artifact)
+    
+    # 解析 content 为字典
+    import json
+    logger.info(f"Original content type: {type(artifact_model.content)}")
+    logger.info(f"Original content (first 100 chars): {artifact_model.content[:100]}")
+    
+    try:
+        # 第一次解析
+        content_dict = json.loads(artifact_model.content)
+        logger.info(f"After first parse type: {type(content_dict)}")
+        
+        # 如果解析后还是字符串，说明是双重编码，再解析一次
+        if isinstance(content_dict, str):
+            content_dict = json.loads(content_dict)
+            logger.info(f"After second parse type: {type(content_dict)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse content: {e}")
+        content_dict = {"error": "Failed to parse content", "raw": artifact_model.content}
+    
+    # 创建响应字典
+    response = {
+        "artifact": {
+            "artifact_id": artifact_model.artifact_id,
+            "task_id": artifact_model.task_id,
+            "artifact_type": artifact_model.artifact_type,
+            "version": artifact_model.version,
+            "prompt_instance": {
+                "template_id": artifact_model.prompt_instance.template_id,
+                "language": artifact_model.prompt_instance.language,
+                "parameters": artifact_model.prompt_instance.parameters,
+            },
+            "content": content_dict,  # 解析后的字典
+            "metadata": artifact_model.metadata,
+            "created_at": artifact_model.created_at.isoformat(),
+            "created_by": artifact_model.created_by,
+        }
+    }
+    
+    logger.info(f"Response content type: {type(response['artifact']['content'])}")
+    logger.info(f"Artifact detail retrieved: {artifact_id}")
+    
+    return response
+
+
+@standalone_router.put("/{artifact_id}")
+async def update_artifact(
+    artifact_id: str,
+    content: Dict,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    直接修改 artifact 内容（原地更新）
+    
+    用于用户手动编辑会议纪要等内容。
+    直接更新现有 artifact，不创建新版本。
+    
+    Args:
+        artifact_id: 衍生内容 ID
+        content: 新的内容（字典格式）
+        user_id: 当前用户 ID (来自依赖注入)
+        db: 数据库会话
+        
+    Returns:
+        Dict: 更新确认信息
+        
+    Raises:
+        HTTPException: 404 如果衍生内容不存在
+        HTTPException: 403 如果无权访问
+    """
+    logger.info(f"Updating artifact: {artifact_id} for user {user_id}")
+    
+    # 获取 artifact
+    artifact_repo = ArtifactRepository(db)
+    artifact = artifact_repo.get_by_id(artifact_id)
+    
+    if not artifact:
+        raise HTTPException(status_code=404, detail="衍生内容不存在")
+    
+    # 验证所属任务的所有权
+    task_repo = TaskRepository(db)
+    task = task_repo.get_by_id(artifact.task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="关联的任务不存在")
+    
+    if task.user_id != user_id:
+        raise HTTPException(status_code=403, detail="无权修改此衍生内容")
+    
+    # 验证任务状态
+    if task.state not in [TaskState.SUCCESS, TaskState.PARTIAL_SUCCESS]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"任务状态为 {task.state}，无法修改衍生内容"
+        )
+    
+    # 直接更新 content
+    import json
+    artifact.content = json.dumps(content, ensure_ascii=False)
+    
+    # 更新 metadata，标记为手动编辑
+    metadata = artifact.get_metadata_dict() or {}
+    metadata["manually_edited"] = True
+    metadata["last_edited_at"] = datetime.utcnow().isoformat()
+    metadata["last_edited_by"] = user_id
+    artifact.set_metadata_dict(metadata)
+    
+    # 更新任务的 last_content_modified_at
+    task.last_content_modified_at = datetime.utcnow()
+    db.commit()
+    
+    logger.info(f"Artifact updated: {artifact_id}")
+    
+    return {
+        "success": True,
+        "artifact_id": artifact_id,
+        "message": "内容已更新"
+    }
 
 
 @router.post(

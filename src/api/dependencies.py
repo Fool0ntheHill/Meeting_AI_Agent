@@ -106,7 +106,10 @@ async def verify_jwt_token(
             )
         
         # 更新最后登录时间
-        user_repo.update_last_login(user_id)
+        # 注意：在 SQLite 环境下，这会导致 database locked 错误
+        # 因为每次请求都会触发写操作，与 Worker 冲突
+        # 临时禁用，迁移到 PostgreSQL 后可以重新启用
+        # user_repo.update_last_login(user_id)
         
         logger.debug(f"JWT verified: user_id={user_id}, tenant_id={tenant_id}")
         return user_id, tenant_id

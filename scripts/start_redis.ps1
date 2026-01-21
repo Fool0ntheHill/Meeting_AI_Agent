@@ -1,13 +1,11 @@
-# 启动 Redis 服务
-# 使用 UTF-8 编码
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# Start Redis Service
 
 Write-Host "================================" -ForegroundColor Cyan
-Write-Host "  启动 Redis 服务" -ForegroundColor Cyan
+Write-Host "  Starting Redis Service" -ForegroundColor Cyan
 Write-Host "================================" -ForegroundColor Cyan
 Write-Host ""
 
-# 检查 Redis 是否已经在运行
+# Check if Redis is already running
 $redisRunning = $false
 try {
     $testScript = @"
@@ -29,27 +27,27 @@ except:
 }
 
 if ($redisRunning) {
-    Write-Host "✓ Redis 已经在运行" -ForegroundColor Green
+    Write-Host "OK Redis is already running" -ForegroundColor Green
     Write-Host ""
     exit 0
 }
 
-Write-Host "正在启动 Redis..." -ForegroundColor Yellow
+Write-Host "Starting Redis..." -ForegroundColor Yellow
 Write-Host ""
 
-# 尝试方法 1: Docker Redis
-Write-Host "尝试使用 Docker 启动 Redis..." -ForegroundColor Yellow
+# Try Method 1: Docker Redis
+Write-Host "Trying to start Redis using Docker..." -ForegroundColor Yellow
 try {
-    # 检查是否已有 redis 容器
+    # Check if redis container exists
     $containers = docker ps -a --filter "name=redis" --format "{{.Names}}" 2>$null
     
     if ($containers) {
-        # 容器存在，启动它
-        Write-Host "  找到现有 Redis 容器，正在启动..." -ForegroundColor Gray
+        # Container exists, start it
+        Write-Host "  Found existing Redis container, starting..." -ForegroundColor Gray
         docker start $containers[0] 2>$null | Out-Null
     } else {
-        # 创建新容器
-        Write-Host "  创建新的 Redis 容器..." -ForegroundColor Gray
+        # Create new container
+        Write-Host "  Creating new Redis container..." -ForegroundColor Gray
         docker run -d --name redis -p 6379:6379 redis:latest 2>$null | Out-Null
     }
     
@@ -57,58 +55,58 @@ try {
     
     $result = python -c $testScript 2>$null
     if ($result -eq "PONG") {
-        Write-Host "✓ Redis 启动成功 (Docker)" -ForegroundColor Green
+        Write-Host "OK Redis started successfully (Docker)" -ForegroundColor Green
         Write-Host ""
-        Write-Host "Redis 运行在: localhost:6379" -ForegroundColor Cyan
+        Write-Host "Redis running on: localhost:6379" -ForegroundColor Cyan
         exit 0
     }
 } catch {
-    Write-Host "✗ Docker Redis 启动失败" -ForegroundColor Red
+    Write-Host "X Docker Redis failed to start" -ForegroundColor Red
 }
 
-# 尝试方法 2: WSL Redis
-Write-Host "尝试使用 WSL 启动 Redis..." -ForegroundColor Yellow
+# Try Method 2: WSL Redis
+Write-Host "Trying to start Redis using WSL..." -ForegroundColor Yellow
 try {
     Start-Process wsl -ArgumentList "redis-server" -WindowStyle Normal
     Start-Sleep -Seconds 2
     
     $result = python -c $testScript 2>$null
     if ($result -eq "PONG") {
-        Write-Host "✓ Redis 启动成功 (WSL)" -ForegroundColor Green
+        Write-Host "OK Redis started successfully (WSL)" -ForegroundColor Green
         Write-Host ""
-        Write-Host "Redis 运行在: localhost:6379" -ForegroundColor Cyan
+        Write-Host "Redis running on: localhost:6379" -ForegroundColor Cyan
         exit 0
     }
 } catch {
-    Write-Host "✗ WSL Redis 启动失败" -ForegroundColor Red
+    Write-Host "X WSL Redis failed to start" -ForegroundColor Red
 }
 
-# 尝试方法 3: Windows Redis
-Write-Host "尝试使用 Windows Redis..." -ForegroundColor Yellow
+# Try Method 3: Windows Redis
+Write-Host "Trying to start Redis using Windows..." -ForegroundColor Yellow
 try {
     Start-Process redis-server -WindowStyle Normal
     Start-Sleep -Seconds 2
     
     $result = python -c $testScript 2>$null
     if ($result -eq "PONG") {
-        Write-Host "✓ Redis 启动成功 (Windows)" -ForegroundColor Green
+        Write-Host "OK Redis started successfully (Windows)" -ForegroundColor Green
         Write-Host ""
-        Write-Host "Redis 运行在: localhost:6379" -ForegroundColor Cyan
+        Write-Host "Redis running on: localhost:6379" -ForegroundColor Cyan
         exit 0
     }
 } catch {
-    Write-Host "✗ Windows Redis 启动失败" -ForegroundColor Red
+    Write-Host "X Windows Redis failed to start" -ForegroundColor Red
 }
 
 Write-Host ""
 Write-Host "================================" -ForegroundColor Red
-Write-Host "  Redis 启动失败" -ForegroundColor Red
+Write-Host "  Redis Failed to Start" -ForegroundColor Red
 Write-Host "================================" -ForegroundColor Red
 Write-Host ""
-Write-Host "请手动安装 Redis:" -ForegroundColor Yellow
+Write-Host "Please install Redis manually:" -ForegroundColor Yellow
 Write-Host "  1. Docker: docker run -d -p 6379:6379 --name redis redis:latest" -ForegroundColor Yellow
-Write-Host "  2. WSL: wsl --install, 然后 sudo apt install redis-server" -ForegroundColor Yellow
-Write-Host "  3. Windows: 下载 Redis for Windows" -ForegroundColor Yellow
+Write-Host "  2. WSL: wsl --install, then sudo apt install redis-server" -ForegroundColor Yellow
+Write-Host "  3. Windows: Download Redis for Windows" -ForegroundColor Yellow
 Write-Host ""
 
 exit 1

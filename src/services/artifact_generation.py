@@ -86,25 +86,42 @@ class ArtifactGenerationService:
             LLMError: LLM 生成失败
         """
         try:
-            # 1. 获取模板
-            if template is None:
-                if self.templates is None:
-                    raise ValidationError("Template repository not configured")
-                template = await self.templates.get(prompt_instance.template_id)
-                if not template:
-                    raise ValidationError(f"模板不存在: {prompt_instance.template_id}")
+            # 1. 处理 prompt_instance 为 None 或 dict 的情况
+            if prompt_instance is None:
+                # 创建默认的 prompt_instance
+                prompt_instance = PromptInstance(
+                    template_id="default_meeting_minutes",
+                    language=output_language.value if isinstance(output_language, OutputLanguage) else "zh-CN",
+                    parameters={},
+                )
+                logger.warning("No prompt_instance provided, using default")
+            elif isinstance(prompt_instance, dict):
+                # 如果是 dict，转换为 PromptInstance 对象
+                prompt_instance = PromptInstance(**prompt_instance)
+                logger.info(f"Converted dict to PromptInstance: {prompt_instance.template_id}")
             
-            # 2. 验证语言支持
+            # 2. 获取模板
+            if template is None:
+                # 如果没有提供 template 且没有配置 template_repo，使用默认模板
+                if self.templates is None:
+                    logger.warning("Template repository not configured, using default template")
+                    template = self._get_default_template(artifact_type, prompt_instance.language)
+                else:
+                    template = await self.templates.get(prompt_instance.template_id)
+                    if not template:
+                        raise ValidationError(f"模板不存在: {prompt_instance.template_id}")
+            
+            # 3. 验证语言支持
             if prompt_instance.language not in template.supported_languages:
                 raise ValidationError(
                     f"模板不支持语言: {prompt_instance.language}. "
                     f"支持的语言: {template.supported_languages}"
                 )
             
-            # 3. 获取下一个版本号
+            # 4. 获取下一个版本号
             next_version = await self._get_next_version(task_id, artifact_type)
             
-            # 4. 调用 LLM 生成内容
+            # 5. 调用 LLM 生成内容
             artifact = await self.llm.generate_artifact(
                 transcript=transcript,
                 prompt_instance=prompt_instance,
@@ -117,9 +134,19 @@ class ArtifactGenerationService:
                 **kwargs,
             )
             
-            # 5. 保存到数据库(如果有 repo)
+            # 6. 保存到数据库(如果有 repo)
             if self.artifacts is not None:
-                await self.artifacts.create(artifact)
+                # Convert GeneratedArtifact to repository parameters
+                self.artifacts.create(
+                    artifact_id=artifact.artifact_id,
+                    task_id=artifact.task_id,
+                    artifact_type=artifact.artifact_type,
+                    version=artifact.version,
+                    prompt_instance=artifact.prompt_instance.dict() if hasattr(artifact.prompt_instance, 'dict') else artifact.prompt_instance,
+                    content=artifact.content,
+                    created_by=artifact.created_by,
+                    metadata=artifact.metadata,
+                )
                 logger.info(
                     f"Saved artifact to repository: {artifact.artifact_id}, "
                     f"type={artifact.artifact_type}, version={artifact.version}"
@@ -154,7 +181,7 @@ class ArtifactGenerationService:
             return 1
         
         try:
-            latest_version = await self.artifacts.get_latest_version(
+            latest_version = self.artifacts.get_latest_by_task(
                 task_id=task_id, artifact_type=artifact_type
             )
             return (latest_version.version + 1) if latest_version else 1
@@ -180,19 +207,18 @@ class ArtifactGenerationService:
         if self.artifacts is None:
             raise ValidationError("Artifact repository not configured")
         
-        artifacts = await self.artifacts.list_by_task(task_id)
+        # Get all artifact records for this task
+        records = self.artifacts.get_by_task_id(task_id)
         
-        # 按类型分组
+        # Convert records to GeneratedArtifact objects and group by type
         grouped = {}
-        for artifact in artifacts:
+        for record in records:
+            artifact = self.artifacts.to_generated_artifact(record)
             if artifact.artifact_type not in grouped:
                 grouped[artifact.artifact_type] = []
             grouped[artifact.artifact_type].append(artifact)
         
-        # 每个类型内按版本号排序(最新版本在前)
-        for artifact_type in grouped:
-            grouped[artifact_type].sort(key=lambda a: a.version, reverse=True)
-        
+        # Each type is already sorted by version (descending) from the query
         return grouped
 
     async def get_versions(
@@ -214,8 +240,14 @@ class ArtifactGenerationService:
         if self.artifacts is None:
             raise ValidationError("Artifact repository not configured")
         
-        versions = await self.artifacts.list_by_type(task_id, artifact_type)
-        return sorted(versions, key=lambda v: v.version, reverse=True)
+        # Get all versions of this artifact type
+        records = self.artifacts.get_by_task_and_type(task_id, artifact_type)
+        
+        # Convert records to GeneratedArtifact objects
+        versions = [self.artifacts.to_generated_artifact(record) for record in records]
+        
+        # Already sorted by version (descending) from the query
+        return versions
 
     def _extract_participants(self, transcript: TranscriptionResult) -> List[str]:
         """
@@ -232,3 +264,53 @@ class ArtifactGenerationService:
             if segment.speaker:
                 participants.add(segment.speaker)
         return sorted(list(participants))
+
+    def _get_default_template(self, artifact_type: str, language: str) -> PromptTemplate:
+        """
+        获取默认模板（当没有配置 template repository 时使用）
+        
+        Args:
+            artifact_type: 内容类型
+            language: 语言
+            
+        Returns:
+            PromptTemplate: 默认模板
+        """
+        # 默认的会议纪要模板
+        default_prompt = """请根据以下会议转写内容，生成一份结构化的会议纪要。
+
+会议转写内容：
+{transcript}
+
+请按以下格式输出会议纪要：
+
+## 会议概要
+[简要概述会议的主要内容和目的]
+
+## 讨论要点
+[列出会议中讨论的主要议题和观点]
+
+## 决策事项
+[列出会议中达成的决策]
+
+## 行动项
+[列出需要跟进的行动项，包括负责人]
+
+## 其他
+[其他需要记录的信息]
+
+请确保内容准确、简洁、结构清晰。"""
+
+        return PromptTemplate(
+            template_id="default_meeting_minutes",
+            title="默认会议纪要模板",
+            description="用于生成会议纪要的默认模板",
+            prompt_body=default_prompt,
+            artifact_type=artifact_type,
+            supported_languages=[language, "zh-CN", "en-US"],  # 支持当前语言和常用语言
+            parameter_schema={
+                "transcript": {"type": "string", "description": "会议转写内容"}
+            },
+            is_system=True,
+            scope="global",
+        )

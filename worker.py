@@ -43,8 +43,9 @@ def create_worker() -> TaskWorker:
     # 加载配置
     config = get_config()
     
-    # 初始化数据库
-    init_db(config.database.url)
+    # 初始化数据库 (使用 SQLite)
+    database_url = "sqlite:///./meeting_agent.db"
+    init_db(database_url)
     
     # 创建提供商
     volcano_asr = VolcanoASR(config.volcano)
@@ -53,7 +54,12 @@ def create_worker() -> TaskWorker:
     gemini_llm = GeminiLLM(config.gemini)
     
     # 创建工具
-    storage_client = StorageClient(config.volcano)
+    storage_client = StorageClient(
+        bucket=config.storage.bucket,
+        region=config.storage.region,
+        access_key=config.storage.access_key,
+        secret_key=config.storage.secret_key,
+    )
     audio_processor = AudioProcessor()
     
     # 创建服务
@@ -72,15 +78,28 @@ def create_worker() -> TaskWorker:
     
     correction_service = CorrectionService()
     
+    # 创建 template repository (使用数据库会话)
+    from src.database.session import session_scope
+    from src.database.repositories import PromptTemplateRepository, TranscriptRepository, ArtifactRepository
+    
+    # 注意：这里我们需要为每次使用创建新的 session
+    # 但为了简化，我们先传 None，让 artifact_generation_service 在需要时创建
     artifact_generation_service = ArtifactGenerationService(
         llm_provider=gemini_llm,
+        template_repo=None,  # 将在 pipeline 中通过 session 传递
+        artifact_repo=None,  # 将在 TaskWorker 中通过 session 传递
     )
+    
+    # 创建 transcript repository (使用 session_scope)
+    # 注意：这里我们传递 None，在 pipeline 中使用 session_scope 创建
+    transcript_repo = None  # 将在 TaskWorker 中通过 session 传递
     
     pipeline_service = PipelineService(
         transcription_service=transcription_service,
         speaker_recognition_service=speaker_recognition_service,
         correction_service=correction_service,
         artifact_generation_service=artifact_generation_service,
+        transcript_repo=transcript_repo,
     )
     
     # 创建队列管理器

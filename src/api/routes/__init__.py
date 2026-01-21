@@ -15,6 +15,7 @@ api_router.include_router(upload.router, prefix="/upload", tags=["upload"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(corrections.router, prefix="/tasks", tags=["corrections"])
 api_router.include_router(artifacts.router, prefix="/tasks", tags=["artifacts"])
+api_router.include_router(artifacts.standalone_router, prefix="/artifacts", tags=["artifacts"])  # 独立的 artifacts 路由
 api_router.include_router(hotwords.router, prefix="/hotword-sets", tags=["hotwords"])
 api_router.include_router(prompt_templates.router, prefix="/prompt-templates", tags=["prompt-templates"])
 api_router.include_router(folders.router, prefix="/folders", tags=["folders"])

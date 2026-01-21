@@ -13,6 +13,7 @@ from src.database.models import (
     Task,
     TranscriptRecord,
     SpeakerMapping,
+    Speaker,
     GeneratedArtifactRecord,
     PromptTemplateRecord,
 )
@@ -282,6 +283,63 @@ class TranscriptRepository:
             logger.info(f"Transcript segments updated for task {task_id}")
 
 
+class SpeakerRepository:
+    """说话人仓库 - 管理声纹 ID 到真实姓名的映射"""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create_or_update(
+        self,
+        speaker_id: str,
+        display_name: str,
+        tenant_id: str,
+        created_by: str,
+    ) -> Speaker:
+        """创建或更新说话人"""
+        speaker = self.session.query(Speaker).filter(Speaker.speaker_id == speaker_id).first()
+
+        if speaker:
+            # 更新现有说话人
+            speaker.display_name = display_name
+            speaker.updated_at = datetime.utcnow()
+        else:
+            # 创建新说话人
+            speaker = Speaker(
+                speaker_id=speaker_id,
+                display_name=display_name,
+                tenant_id=tenant_id,
+                created_by=created_by,
+            )
+            self.session.add(speaker)
+
+        self.session.flush()
+        logger.info(f"Speaker saved: {speaker_id} -> {display_name}")
+        return speaker
+
+    def get_by_id(self, speaker_id: str) -> Optional[Speaker]:
+        """根据 ID 获取说话人"""
+        return self.session.query(Speaker).filter(Speaker.speaker_id == speaker_id).first()
+
+    def get_by_tenant(self, tenant_id: str) -> List[Speaker]:
+        """获取租户的所有说话人"""
+        return self.session.query(Speaker).filter(Speaker.tenant_id == tenant_id).all()
+
+    def get_display_name(self, speaker_id: str) -> Optional[str]:
+        """获取说话人的显示名称"""
+        speaker = self.get_by_id(speaker_id)
+        return speaker.display_name if speaker else None
+
+    def get_display_names_batch(self, speaker_ids: List[str]) -> Dict[str, str]:
+        """批量获取说话人的显示名称"""
+        speakers = (
+            self.session.query(Speaker)
+            .filter(Speaker.speaker_id.in_(speaker_ids))
+            .all()
+        )
+        return {s.speaker_id: s.display_name for s in speakers}
+
+
 class SpeakerMappingRepository:
     """说话人映射仓库"""
 
@@ -473,6 +531,7 @@ class ArtifactRepository:
             version=record.version,
             prompt_instance=prompt_instance,
             content=record.content,
+            metadata=record.get_metadata_dict() or None,  # 包含元数据
             created_at=record.created_at,
             created_by=record.created_by,
         )

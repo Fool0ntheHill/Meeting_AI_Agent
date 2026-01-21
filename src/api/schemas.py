@@ -84,6 +84,7 @@ class TaskDetailResponse(BaseModel):
     progress: float
     error_details: Optional[str] = None
     duration: Optional[float] = Field(None, description="音频总时长(秒)")
+    folder_id: Optional[str] = Field(None, description="所属文件夹ID")
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -673,6 +674,7 @@ class TranscriptResponse(BaseModel):
     duration: float = Field(..., description="音频时长(秒)")
     language: str = Field(..., description="识别语言")
     provider: str = Field(..., description="ASR 提供商")
+    speaker_mapping: Optional[Dict[str, str]] = Field(None, description="说话人映射（Speaker 1 -> 真实姓名）")
 
     model_config = {
         "json_schema_extra": {
