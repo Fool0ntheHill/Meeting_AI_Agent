@@ -18,6 +18,7 @@ from src.services.correction import CorrectionService
 from src.services.speaker_recognition import SpeakerRecognitionService
 from src.services.transcription import TranscriptionService
 from src.utils.cost import CostTracker
+from src.utils.error_handler import classify_exception
 from src.config.models import PricingConfig
 
 logger = logging.getLogger(__name__)
@@ -147,9 +148,9 @@ class PipelineService:
         
         try:
             from src.database.repositories import TaskRepository
-            from src.database.session import get_db_session
+            from src.database.session import session_scope
             
-            with get_db_session() as db:
+            with session_scope() as db:
                 task_repo = TaskRepository(db)
                 task = task_repo.get_by_id(task_id)
                 if task:
@@ -165,18 +166,31 @@ class PipelineService:
             logger.warning(f"Task {task_id}: Failed to load task metadata: {e}")
         
         try:
-            # 1. 转写阶段
+            # 1. 转写阶段 (0-40%)
             logger.info(f"Task {task_id}: Starting transcription phase")
-            await self._update_task_status(task_id, TaskState.TRANSCRIBING)
-            
-            transcript, audio_url, local_audio_path = await self.transcription.transcribe(
-                audio_files=audio_files,
-                file_order=file_order,
-                asr_language=asr_language,
-                hotword_set_id=hotword_set_id,
-                tenant_id=tenant_id,
-                user_id=user_id,
+            self._update_task_status(
+                task_id, 
+                TaskState.TRANSCRIBING, 
+                progress=0.0,
+                audio_duration=None,  # 还不知道音频时长
             )
+            
+            try:
+                transcript, audio_url, local_audio_path = await self.transcription.transcribe(
+                    audio_files=audio_files,
+                    file_order=file_order,
+                    asr_language=asr_language,
+                    hotword_set_id=hotword_set_id,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                )
+            except Exception as e:
+                # ASR 阶段错误
+                logger.error(f"Task {task_id}: ASR failed: {e}", exc_info=True)
+                error = classify_exception(e, context="ASR")
+                self._update_task_error(task_id, error)
+                self._update_task_status(task_id, TaskState.FAILED)
+                raise
             
             logger.info(
                 f"Task {task_id}: Transcription completed, "
@@ -184,6 +198,15 @@ class PipelineService:
                 f"segments={len(transcript.segments)}, "
                 f"audio_url={audio_url[:100]}..., "
                 f"local_audio_path={local_audio_path}"
+            )
+            
+            # 更新进度：转写完成 (40%)
+            audio_duration = transcript.duration
+            self._update_task_status(
+                task_id,
+                TaskState.TRANSCRIBING,
+                progress=40.0,
+                audio_duration=audio_duration,
             )
             
             # 提取会议元数据（在转写完成后）
@@ -204,15 +227,14 @@ class PipelineService:
                 # 保存提取的元数据到数据库
                 try:
                     from src.database.repositories import TaskRepository
-                    from src.database.session import get_db_session
+                    from src.database.session import session_scope
                     
-                    with get_db_session() as db:
+                    with session_scope() as db:
                         task_repo = TaskRepository(db)
                         task = task_repo.get_by_id(task_id)
                         if task:
                             task.meeting_date = meeting_date
                             task.meeting_time = meeting_time
-                            db.commit()
                             logger.info(f"Task {task_id}: Meeting metadata saved to database")
                 except Exception as e:
                     logger.warning(f"Task {task_id}: Failed to save meeting metadata: {e}")
@@ -235,22 +257,43 @@ class PipelineService:
             actual_usage["asr_provider"] = transcript.provider
             actual_usage["asr_duration"] = transcript.duration
             
-            # 2. 说话人识别阶段 (可选)
+            # 2. 说话人识别阶段 (40-60%)
             speaker_mapping = {}
             if not skip_speaker_recognition:
                 logger.info(f"Task {task_id}: Starting speaker recognition phase")
-                await self._update_task_status(task_id, TaskState.IDENTIFYING)
-                
-                # 调用说话人识别服务 (使用本地音频路径)
-                speaker_mapping = await self.speaker_recognition.recognize_speakers(
-                    transcript=transcript,
-                    audio_path=local_audio_path,
-                    known_speakers=None,  # TODO: 从数据库加载已知说话人
+                self._update_task_status(
+                    task_id, 
+                    TaskState.IDENTIFYING, 
+                    progress=40.0,
+                    audio_duration=audio_duration,
                 )
+                
+                try:
+                    # 调用说话人识别服务 (使用本地音频路径)
+                    speaker_mapping = await self.speaker_recognition.recognize_speakers(
+                        transcript=transcript,
+                        audio_path=local_audio_path,
+                        known_speakers=None,  # TODO: 从数据库加载已知说话人
+                    )
+                except Exception as e:
+                    # 声纹识别阶段错误
+                    logger.error(f"Task {task_id}: Voiceprint recognition failed: {e}", exc_info=True)
+                    error = classify_exception(e, context="Voiceprint")
+                    self._update_task_error(task_id, error)
+                    self._update_task_status(task_id, TaskState.FAILED)
+                    raise
                 
                 logger.info(
                     f"Task {task_id}: Speaker recognition completed, "
                     f"identified {len(speaker_mapping)} speakers: {speaker_mapping}"
+                )
+                
+                # 更新进度：说话人识别完成 (60%)
+                self._update_task_status(
+                    task_id,
+                    TaskState.IDENTIFYING,
+                    progress=60.0,
+                    audio_duration=audio_duration,
                 )
                 
                 # 保存 speaker mapping 到数据库
@@ -278,13 +321,26 @@ class PipelineService:
             else:
                 logger.info(f"Task {task_id}: Skipping speaker recognition")
             
-            # 3. 修正阶段 (仅在有说话人映射时执行)
+            # 3. 修正阶段 (60-70%)
             if speaker_mapping:
                 logger.info(f"Task {task_id}: Starting correction phase")
-                await self._update_task_status(task_id, TaskState.CORRECTING)
+                self._update_task_status(
+                    task_id, 
+                    TaskState.CORRECTING, 
+                    progress=60.0,
+                    audio_duration=audio_duration,
+                )
                 
                 transcript = await self.correction.correct_speakers(transcript, speaker_mapping)
                 logger.info(f"Task {task_id}: Speaker correction completed")
+                
+                # 更新进度：修正完成 (70%)
+                self._update_task_status(
+                    task_id,
+                    TaskState.CORRECTING,
+                    progress=70.0,
+                    audio_duration=audio_duration,
+                )
                 
                 # 3.5. 替换成真实姓名（用于 LLM 生成）
                 if self.speakers is not None:
@@ -312,21 +368,34 @@ class PipelineService:
             else:
                 logger.info(f"Task {task_id}: No speaker mapping, skipping correction phase")
             
-            # 4. 生成衍生内容阶段
+            # 4. 生成衍生内容阶段 (70-100%)
             logger.info(f"Task {task_id}: Starting artifact generation phase")
-            await self._update_task_status(task_id, TaskState.SUMMARIZING)
-            
-            artifact = await self.artifact_generation.generate_artifact(
-                task_id=task_id,
-                transcript=transcript,
-                artifact_type="meeting_minutes",
-                prompt_instance=prompt_instance,
-                output_language=output_language,
-                user_id=user_id,
-                template=template,
-                meeting_date=meeting_date,  # 传入会议日期
-                meeting_time=meeting_time,  # 传入会议时间
+            self._update_task_status(
+                task_id, 
+                TaskState.SUMMARIZING, 
+                progress=70.0,  # 统一使用 70% 作为总结阶段起始进度
+                audio_duration=audio_duration,
             )
+            
+            try:
+                artifact = await self.artifact_generation.generate_artifact(
+                    task_id=task_id,
+                    transcript=transcript,
+                    artifact_type="meeting_minutes",
+                    prompt_instance=prompt_instance,
+                    output_language=output_language,
+                    user_id=user_id,
+                    template=template,
+                    meeting_date=meeting_date,  # 传入会议日期
+                    meeting_time=meeting_time,  # 传入会议时间
+                )
+            except Exception as e:
+                # LLM 生成阶段错误
+                logger.error(f"Task {task_id}: LLM generation failed: {e}", exc_info=True)
+                error = classify_exception(e, context="LLM")
+                self._update_task_error(task_id, error)
+                self._update_task_status(task_id, TaskState.FAILED, progress=70.0)
+                raise
             
             logger.info(
                 f"Task {task_id}: Artifact generation completed, "
@@ -341,8 +410,13 @@ class PipelineService:
             # 5. 计算并记录实际成本
             await self._calculate_and_log_actual_cost(task_id, actual_usage, user_id, tenant_id)
             
-            # 6. 更新任务状态为成功
-            await self._update_task_status(task_id, TaskState.SUCCESS)
+            # 6. 更新任务状态为成功 (100%)
+            self._update_task_status(
+                task_id, 
+                TaskState.SUCCESS, 
+                progress=100.0,
+                audio_duration=audio_duration,
+            )
             
             logger.info(f"Task {task_id}: Pipeline completed successfully")
             
@@ -355,8 +429,19 @@ class PipelineService:
                 exc_info=True,
             )
             
+            # 如果还没有设置错误码，则分类并设置
+            # (如果已经在上面的 try-except 中设置过，这里就不会重复设置)
+            try:
+                task = self.tasks.get_by_id(task_id) if self.tasks else None
+                if task and not task.error_code:
+                    # 通用错误分类
+                    error = classify_exception(e, context="Pipeline")
+                    self._update_task_error(task_id, error)
+            except Exception as classify_error:
+                logger.warning(f"Failed to classify error for task {task_id}: {classify_error}")
+            
             # 更新任务状态为失败
-            await self._update_task_status(
+            self._update_task_status(
                 task_id, TaskState.FAILED, error_details=str(e)
             )
             
@@ -384,11 +469,12 @@ class PipelineService:
                 except Exception as e:
                     logger.warning(f"Failed to cleanup temp file {local_audio_path}: {e}")
 
-    async def _update_task_status(
+    def _update_task_status(
         self,
         task_id: str,
         state: TaskState,
         progress: float = 0.0,
+        audio_duration: Optional[float] = None,
         error_details: Optional[str] = None,
     ) -> None:
         """
@@ -397,7 +483,8 @@ class PipelineService:
         Args:
             task_id: 任务 ID
             state: 任务状态
-            progress: 进度百分比
+            progress: 进度百分比 (0-100)
+            audio_duration: 音频总时长(秒)，用于计算预估时间
             error_details: 错误详情
         """
         if self.tasks is None:
@@ -408,16 +495,61 @@ class PipelineService:
             )
             return
         
+        # 计算预估剩余时间
+        estimated_time = None
+        if audio_duration:
+            if progress >= 100.0:
+                # 任务完成，剩余时间为 0
+                estimated_time = 0
+            else:
+                # 使用 25% 规则：总耗时 = 音频时长 * 0.25
+                total_estimated_time = audio_duration * 0.25
+                # 剩余时间 = 总耗时 * (1 - 进度百分比)
+                estimated_time = int(total_estimated_time * (1 - progress / 100.0))
+        
         try:
-            await self.tasks.update_status(
+            self.tasks.update_status(
                 task_id=task_id,
                 state=state,
                 progress=progress,
+                estimated_time=estimated_time,
                 error_details=error_details,
                 updated_at=datetime.now(),
             )
+            
+            logger.info(
+                f"Task {task_id}: Status updated - state={state.value}, "
+                f"progress={progress}%, estimated_time={estimated_time}s"
+            )
         except Exception as e:
             logger.warning(f"Failed to update task status: {e}")
+
+    def _update_task_error(self, task_id: str, error: "TaskError") -> None:
+        """
+        更新任务错误信息
+        
+        Args:
+            task_id: 任务 ID
+            error: TaskError 对象（来自 classify_exception）
+        """
+        if self.tasks is None:
+            logger.warning(f"Task {task_id}: Cannot update error - no task repository")
+            return
+        
+        try:
+            self.tasks.update_error(
+                task_id=task_id,
+                error_code=error.error_code.value,
+                error_message=error.error_message,
+                error_details=error.error_details,
+                retryable=error.retryable,
+            )
+            logger.info(
+                f"Task {task_id}: Error updated - code={error.error_code.value}, "
+                f"message={error.error_message}, retryable={error.retryable}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update task error for {task_id}: {e}")
 
     async def get_status(self, task_id: str) -> dict:
         """
@@ -437,14 +569,21 @@ class PipelineService:
             }
         
         try:
-            status = await self.tasks.get_status(task_id)
+            task = self.tasks.get_by_id(task_id)
+            if not task:
+                return {
+                    "task_id": task_id,
+                    "state": "not_found",
+                    "message": "Task not found",
+                }
+            
             return {
                 "task_id": task_id,
-                "state": status.state.value,
-                "progress": status.progress,
-                "estimated_time": status.estimated_time,
-                "error_details": status.error_details,
-                "updated_at": status.updated_at.isoformat(),
+                "state": task.state,
+                "progress": task.progress,
+                "estimated_time": task.estimated_time,
+                "error_details": task.error_details,
+                "updated_at": task.updated_at.isoformat(),
             }
         except Exception as e:
             logger.error(f"Failed to get task status: {e}")

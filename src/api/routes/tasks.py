@@ -123,6 +123,7 @@ async def create_task(
             audio_files=request.audio_files,
             file_order=file_order,
             original_filenames=request.original_filenames,  # 保存原始文件名
+            audio_duration=request.audio_duration,  # 保存音频时长（从上传接口获取）
             meeting_date=request.meeting_date,  # 保存会议日期
             meeting_time=request.meeting_time,  # 保存会议时间
             asr_language=request.asr_language,
@@ -230,7 +231,12 @@ async def get_task_status(
                     state=TaskState(data["state"]),
                     progress=data.get("progress", 0.0),
                     estimated_time=data.get("estimated_time"),
+                    audio_duration=data.get("audio_duration"),
+                    asr_language=data.get("asr_language"),
+                    error_code=data.get("error_code"),
+                    error_message=data.get("error_message"),
                     error_details=data.get("error_details"),
+                    retryable=data.get("retryable"),
                     updated_at=data["updated_at"],
                 )
         except json.JSONDecodeError as e:
@@ -250,7 +256,17 @@ async def get_task_status(
     if task.user_id != user_id:
         raise HTTPException(status_code=403, detail="无权访问此任务")
     
-    # 3. 回填缓存(TTL 60秒)
+    # 获取音频时长（优先从 Task 模型，如果没有则从转写记录）
+    audio_duration = task.audio_duration
+    if audio_duration is None and task.transcripts:
+        audio_duration = task.transcripts[0].duration
+    
+    # 获取 ASR 识别语言
+    asr_language = task.asr_language
+    
+    # 3. 回填缓存
+    # 对于进行中的任务，使用较短的TTL（5秒），确保能及时看到状态更新
+    # 对于已完成的任务，使用较长的TTL（60秒）
     if redis_client:
         try:
             cache_data = {
@@ -259,15 +275,27 @@ async def get_task_status(
                 "state": task.state,
                 "progress": task.progress,
                 "estimated_time": task.estimated_time,
+                "audio_duration": audio_duration,
+                "asr_language": asr_language,
+                "error_code": task.error_code,
+                "error_message": task.error_message,
                 "error_details": task.error_details,
+                "retryable": task.retryable,
                 "updated_at": task.updated_at.isoformat() if task.updated_at else None,
             }
+            
+            # 根据任务状态设置不同的TTL
+            if task.state in ["success", "failed", "partial_success"]:
+                ttl = 60  # 已完成的任务，缓存60秒
+            else:
+                ttl = 5  # 进行中的任务，缓存5秒，确保能及时看到更新
+            
             redis_client.setex(
                 cache_key,
-                60,  # TTL 60秒
+                ttl,
                 json.dumps(cache_data, ensure_ascii=False),
             )
-            logger.debug(f"Cached task status for {task_id}")
+            logger.debug(f"Cached task status for {task_id} (TTL={ttl}s)")
         except Exception as e:
             logger.warning(f"Failed to cache task status for {task_id}: {e}")
     
@@ -276,7 +304,12 @@ async def get_task_status(
         state=TaskState(task.state),
         progress=task.progress,
         estimated_time=task.estimated_time,
+        audio_duration=audio_duration,
+        asr_language=asr_language,
+        error_code=task.error_code,
+        error_message=task.error_message,
         error_details=task.error_details,
+        retryable=task.retryable,
         updated_at=task.updated_at,
     )
 
@@ -313,7 +346,10 @@ async def get_task_detail(
         output_language=task.output_language,
         state=TaskState(task.state),
         progress=task.progress,
+        error_code=task.error_code,
+        error_message=task.error_message,
         error_details=task.error_details,
+        retryable=task.retryable,
         duration=duration,
         folder_id=task.folder_id,  # Add folder_id
         created_at=task.created_at,
@@ -476,7 +512,10 @@ async def list_tasks(
             output_language=task.output_language,
             state=TaskState(task.state),
             progress=task.progress,
+            error_code=task.error_code,
+            error_message=task.error_message,
             error_details=task.error_details,
+            retryable=task.retryable,
             duration=duration,
             folder_id=task.folder_id,  # Add folder_id
             created_at=task.created_at,

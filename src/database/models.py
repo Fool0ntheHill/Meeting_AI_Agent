@@ -122,6 +122,7 @@ class Task(Base):
     audio_files = Column(Text, nullable=False)  # JSON: ["file1.ogg", "file2.ogg"]
     file_order = Column(Text, nullable=False)  # JSON: [0, 1]
     original_filenames = Column(Text, nullable=True)  # JSON: ["meeting_20260121.ogg", "meeting_20260121_part2.ogg"]
+    audio_duration = Column(Float, nullable=True)  # 音频总时长（秒），从上传时获取
     
     # 会议元数据（可选）
     meeting_date = Column(String(32), nullable=True)  # 会议日期，如 "2026-01-21"
@@ -140,7 +141,10 @@ class Task(Base):
     state = Column(String(32), nullable=False, default="pending", index=True)
     progress = Column(Float, nullable=False, default=0.0)
     estimated_time = Column(Integer, nullable=True)  # 秒
-    error_details = Column(Text, nullable=True)
+    error_code = Column(String(64), nullable=True)  # 结构化错误码
+    error_message = Column(Text, nullable=True)  # 用户可读的错误消息
+    error_details = Column(Text, nullable=True)  # 详细的调试信息
+    retryable = Column(Boolean, nullable=True)  # 是否可重试
 
     # 确认和归档
     is_confirmed = Column(Boolean, nullable=False, default=False)

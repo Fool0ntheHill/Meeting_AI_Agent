@@ -97,6 +97,7 @@ class TaskRepository:
         audio_files: List[str],
         file_order: List[int],
         original_filenames: Optional[List[str]] = None,
+        audio_duration: Optional[float] = None,
         meeting_date: Optional[str] = None,
         meeting_time: Optional[str] = None,
         asr_language: str = "zh-CN+en-US",
@@ -114,6 +115,7 @@ class TaskRepository:
             audio_files=json.dumps(audio_files),
             file_order=json.dumps(file_order),
             original_filenames=json.dumps(original_filenames, ensure_ascii=False) if original_filenames else None,
+            audio_duration=audio_duration,
             meeting_date=meeting_date,
             meeting_time=meeting_time,
             asr_language=asr_language,
@@ -154,23 +156,128 @@ class TaskRepository:
         task_id: str,
         state: str,
         progress: Optional[float] = None,
+        estimated_time: Optional[int] = None,
         error_details: Optional[str] = None,
     ) -> None:
-        """更新任务状态"""
-        task = self.get_by_id(task_id)
-        if task:
-            task.state = state
-            if progress is not None:
-                task.progress = progress
-            if error_details is not None:
-                task.error_details = error_details
-            task.updated_at = datetime.now()
+        """
+        更新任务状态
+        
+        使用独立的session和事务，确保状态更新立即可见，
+        不影响主session中的其他操作。
+        """
+        # 使用独立的session来更新状态，立即commit
+        from src.database.session import session_scope
+        
+        try:
+            with session_scope() as independent_session:
+                # 在独立session中查询任务
+                task = independent_session.query(Task).filter(Task.task_id == task_id).first()
+                if task:
+                    task.state = state
+                    if progress is not None:
+                        task.progress = progress
+                    if estimated_time is not None:
+                        task.estimated_time = estimated_time
+                    if error_details is not None:
+                        task.error_details = error_details
+                    task.updated_at = datetime.now()
+                    
+                    if state in ["success", "failed", "partial_success"]:
+                        task.completed_at = datetime.now()
+                    
+                    # session_scope会自动commit
+                    logger.info(f"Task state updated: {task_id} -> {state} (progress={progress}%, estimated_time={estimated_time}s)")
             
-            if state in ["success", "failed", "partial_success"]:
-                task.completed_at = datetime.now()
+            # 清除 Redis 缓存，确保 API 返回最新数据
+            self._clear_task_cache(task_id)
             
-            self.session.flush()
-            logger.info(f"Task state updated: {task_id} -> {state}")
+        except Exception as e:
+            logger.error(f"Failed to update task state: {e}")
+            # 不抛出异常，避免影响主流程
+    
+    def _clear_task_cache(self, task_id: str) -> None:
+        """清除任务状态的 Redis 缓存"""
+        try:
+            import redis
+            # 使用连接池，避免每次都创建新连接
+            r = redis.from_url(
+                "redis://localhost:6379/0",
+                decode_responses=True,
+                socket_connect_timeout=1,  # 1秒连接超时
+                socket_timeout=1,  # 1秒操作超时
+            )
+            cache_key = f"task_status:{task_id}"
+            deleted = r.delete(cache_key)
+            if deleted:
+                logger.debug(f"Cleared cache for task {task_id}")
+            else:
+                logger.debug(f"Cache key not found for task {task_id} (already cleared or never cached)")
+            # 显式关闭连接
+            r.close()
+        except Exception as e:
+            # 缓存清除失败不影响主流程，只记录警告
+            logger.warning(f"Failed to clear cache for task {task_id}: {e}")
+    
+    def update_status(
+        self,
+        task_id: str,
+        state,  # TaskState enum
+        progress: Optional[float] = None,
+        estimated_time: Optional[int] = None,
+        error_details: Optional[str] = None,
+        updated_at: Optional[datetime] = None,
+    ) -> None:
+        """更新任务状态（支持 TaskState enum）"""
+        # 将 TaskState enum 转换为字符串
+        state_str = state.value if hasattr(state, 'value') else str(state)
+        self.update_state(
+            task_id=task_id,
+            state=state_str,
+            progress=progress,
+            estimated_time=estimated_time,
+            error_details=error_details,
+        )
+    
+    def update_error(
+        self,
+        task_id: str,
+        error_code: str,
+        error_message: str,
+        error_details: Optional[str] = None,
+        retryable: bool = False,
+    ) -> None:
+        """
+        更新任务错误信息
+        
+        使用独立的session和事务，确保错误信息立即可见。
+        
+        Args:
+            task_id: 任务 ID
+            error_code: 错误码（如 "ASR_SERVICE_ERROR"）
+            error_message: 用户可读的错误消息
+            error_details: 详细的调试信息（可选）
+            retryable: 是否可重试
+        """
+        from src.database.session import session_scope
+        
+        try:
+            with session_scope() as independent_session:
+                task = independent_session.query(Task).filter(Task.task_id == task_id).first()
+                if task:
+                    task.error_code = error_code
+                    task.error_message = error_message
+                    task.error_details = error_details
+                    task.retryable = retryable
+                    task.updated_at = datetime.now()
+                    
+                    logger.info(f"Task error updated: {task_id} -> {error_code}: {error_message} (retryable={retryable})")
+            
+            # 清除缓存
+            self._clear_task_cache(task_id)
+            
+        except Exception as e:
+            logger.error(f"Failed to update task error: {e}")
+            # 不抛出异常，避免影响主流程
 
     def delete(self, task_id: str) -> bool:
         """删除任务"""

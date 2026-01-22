@@ -120,6 +120,7 @@ export interface CreateTaskRequest {
   audio_files: string[];  // 文件路径列表
   file_order?: number[];
   original_filenames?: string[];  // 原始文件名列表 ✨ 新增
+  audio_duration?: number;  // 音频总时长（秒），从上传接口获取 ✨ 新增
   meeting_type: string;
   meeting_date?: string;  // 会议日期，格式：YYYY-MM-DD ✨ 新增
   meeting_time?: string;  // 会议时间，格式：HH:MM ✨ 新增
@@ -140,6 +141,8 @@ export interface TaskStatusResponse {
   state: TaskState;
   progress: number;  // 0-100
   estimated_time?: number;  // 秒
+  audio_duration?: number;  // 音频总时长（秒），从 progress=0 开始可用 ✨ 新增
+  asr_language?: string;  // ASR识别语言（如 "zh-CN+en-US"）✨ 新增
   error_details?: string;
   updated_at: string;
 }

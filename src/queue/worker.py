@@ -129,6 +129,7 @@ class TaskWorker:
             # 为这个任务创建 transcript 和 artifact repositories
             from src.database.session import session_scope
             from src.database.repositories import (
+                TaskRepository,
                 TranscriptRepository, 
                 ArtifactRepository, 
                 SpeakerMappingRepository, 
@@ -137,6 +138,7 @@ class TaskWorker:
             )
             
             with session_scope() as session:
+                task_repo = TaskRepository(session)
                 transcript_repo = TranscriptRepository(session)
                 artifact_repo = ArtifactRepository(session)
                 speaker_mapping_repo = SpeakerMappingRepository(session)
@@ -144,6 +146,7 @@ class TaskWorker:
                 template_repo = PromptTemplateRepository(session)
                 
                 # 临时设置到 pipeline
+                self.pipeline_service.tasks = task_repo  # 添加这一行
                 self.pipeline_service.transcripts = transcript_repo
                 self.pipeline_service.artifact_generation.artifacts = artifact_repo
                 self.pipeline_service.artifact_generation.templates = template_repo
@@ -167,15 +170,16 @@ class TaskWorker:
                 session.commit()
                 logger.info(f"Task {task_id}: Session committed, transcript and artifact saved")
             
-            # 更新任务状态为 SUCCESS
-            self._update_task_state(task_id, TaskState.SUCCESS)
+            # Pipeline 已经更新了任务状态为 SUCCESS，不需要再次更新
             
             elapsed_time = time.time() - start_time
             logger.info(f"Task {task_id} completed successfully in {elapsed_time:.2f}s")
         
         except Exception as e:
-            # 更新任务状态为 FAILED
-            self._update_task_state(task_id, TaskState.FAILED, error_message=str(e))
+            # Pipeline 失败时才需要更新状态
+            # 因为 pipeline 内部可能已经更新了状态
+            logger.error(f"Task {task_id} failed: {e}")
+            # 不需要再次更新，pipeline 已经处理了
             raise
     
     def _update_task_state(

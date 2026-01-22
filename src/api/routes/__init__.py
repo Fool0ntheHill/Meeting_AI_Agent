@@ -3,7 +3,7 @@
 
 from fastapi import APIRouter
 
-from src.api.routes import artifacts, auth, corrections, folders, health, hotwords, prompt_templates, tasks, trash, upload
+from src.api.routes import artifacts, auth, corrections, folders, health, hotwords, prompt_templates, sse, tasks, trash, upload
 
 # 创建主路由器
 api_router = APIRouter()
@@ -20,5 +20,6 @@ api_router.include_router(hotwords.router, prefix="/hotword-sets", tags=["hotwor
 api_router.include_router(prompt_templates.router, prefix="/prompt-templates", tags=["prompt-templates"])
 api_router.include_router(folders.router, prefix="/folders", tags=["folders"])
 api_router.include_router(trash.router, tags=["trash"])
+api_router.include_router(sse.router, prefix="/sse", tags=["sse"])  # SSE 实时推送 (2026-01-22)
 
 __all__ = ["api_router"]

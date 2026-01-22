@@ -25,6 +25,7 @@ class CreateTaskRequest(BaseModel):
     audio_files: List[str] = Field(..., min_length=1, description="音频文件 URL 列表")
     file_order: Optional[List[int]] = Field(None, description="文件排序索引")
     original_filenames: Optional[List[str]] = Field(None, description="原始文件名列表")
+    audio_duration: Optional[float] = Field(None, description="音频总时长(秒)，从上传接口获取")
     meeting_type: str = Field(..., description="会议类型")
     meeting_date: Optional[str] = Field(None, description="会议日期，格式：YYYY-MM-DD")
     meeting_time: Optional[str] = Field(None, description="会议时间，格式：HH:MM")
@@ -39,6 +40,7 @@ class CreateTaskRequest(BaseModel):
                 "audio_files": ["https://tos.example.com/meeting.wav"],
                 "file_order": [0],
                 "original_filenames": ["meeting_20260121_1430.wav"],
+                "audio_duration": 479.1,
                 "meeting_type": "weekly_sync",
                 "meeting_date": "2026-01-21",
                 "meeting_time": "14:30",
@@ -70,7 +72,12 @@ class TaskStatusResponse(BaseModel):
     state: TaskState
     progress: float = Field(..., ge=0, le=100, description="进度百分比")
     estimated_time: Optional[int] = Field(None, description="预计剩余时间(秒)")
-    error_details: Optional[str] = None
+    audio_duration: Optional[float] = Field(None, description="音频总时长(秒)")
+    asr_language: Optional[str] = Field(None, description="ASR识别语言 (如 zh-CN+en-US)")
+    error_code: Optional[str] = Field(None, description="结构化错误码")
+    error_message: Optional[str] = Field(None, description="用户可读的错误消息")
+    error_details: Optional[str] = Field(None, description="详细的调试信息")
+    retryable: Optional[bool] = Field(None, description="是否可重试")
     updated_at: datetime
 
 
@@ -88,7 +95,10 @@ class TaskDetailResponse(BaseModel):
     output_language: str
     state: TaskState
     progress: float
-    error_details: Optional[str] = None
+    error_code: Optional[str] = Field(None, description="结构化错误码")
+    error_message: Optional[str] = Field(None, description="用户可读的错误消息")
+    error_details: Optional[str] = Field(None, description="详细的调试信息")
+    retryable: Optional[bool] = Field(None, description="是否可重试")
     duration: Optional[float] = Field(None, description="音频总时长(秒)")
     folder_id: Optional[str] = Field(None, description="所属文件夹ID")
     created_at: datetime
