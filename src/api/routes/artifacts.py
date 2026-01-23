@@ -17,6 +17,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 import uuid
+import json
 
 from src.api.dependencies import get_db, get_current_user_id, get_llm_provider, verify_task_ownership
 from src.database.models import Task
@@ -561,3 +562,80 @@ async def generate_artifact(
             content=artifact.get_content_dict(),
             message=f"LLM 生成失败，返回占位符内容: {str(e)}",
         )
+
+
+# ============================================================================
+# DELETE Artifact
+# ============================================================================
+
+
+@router.delete("/{task_id}/artifacts/{artifact_id}")
+async def delete_artifact(
+    artifact_id: str,
+    task: Task = Depends(verify_task_ownership),
+    db: Session = Depends(get_db),
+):
+    """
+    删除指定的 artifact
+    
+    功能:
+    - 删除指定 ID 的 artifact
+    - 验证 artifact 属于当前任务
+    - 验证用户权限
+    
+    Args:
+        artifact_id: Artifact ID
+        task: 任务对象（已验证所有权）
+        db: 数据库会话
+        
+    Returns:
+        删除成功消息
+        
+    Raises:
+        HTTPException: 404 如果 artifact 不存在
+        HTTPException: 403 如果 artifact 不属于此任务
+    """
+    artifact_repo = ArtifactRepository(db)
+    
+    # 获取 artifact
+    artifact = artifact_repo.get_by_id(artifact_id)
+    
+    if not artifact:
+        logger.warning(f"Artifact not found: {artifact_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact 不存在: {artifact_id}"
+        )
+    
+    # 验证 artifact 属于此任务
+    if artifact.task_id != task.task_id:
+        logger.warning(
+            f"Artifact {artifact_id} does not belong to task {task.task_id}, "
+            f"belongs to {artifact.task_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="无权删除此 artifact"
+        )
+    
+    # 删除 artifact
+    success = artifact_repo.delete(artifact_id)
+    
+    if not success:
+        logger.error(f"Failed to delete artifact: {artifact_id}")
+        raise HTTPException(
+            status_code=500,
+            detail="删除 artifact 失败"
+        )
+    
+    # 更新内容最后修改时间
+    task.last_content_modified_at = datetime.now()
+    db.commit()
+    
+    logger.info(f"Artifact {artifact_id} deleted successfully")
+    
+    return {
+        "success": True,
+        "message": f"Artifact {artifact_id} 已删除",
+        "artifact_id": artifact_id
+    }

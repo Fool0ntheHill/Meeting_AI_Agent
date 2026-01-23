@@ -57,7 +57,7 @@ async def verify_jwt_token(
     db: Session = Depends(get_db)
 ) -> Tuple[str, str]:
     """
-    验证 JWT Token
+    验证 JWT Token (开发环境使用)
     
     Args:
         credentials: HTTP Bearer Token
@@ -120,6 +120,85 @@ async def verify_jwt_token(
             status_code=401,
             detail="无效的 Token"
         )
+
+
+async def verify_gsuc_session(
+    token: str = Header(None, alias="Token"),
+    db: Session = Depends(get_db)
+) -> Tuple[str, str]:
+    """
+    验证 GSUC SESSIONID (生产环境使用)
+    
+    流程:
+    1. 前端从 Cookie 中读取 SESSIONID
+    2. 前端将 SESSIONID 放入 Token header 发送给后端
+    3. 后端从 Token header 提取 SESSIONID
+    4. 后端验证 SESSIONID (调用 GSUC API 或查询 Redis 缓存)
+    5. 返回 user_id 和 tenant_id
+    
+    Args:
+        token: Token header 中的 SESSIONID (前端从 Cookie 读取后发送)
+        db: 数据库会话
+        
+    Returns:
+        Tuple[str, str]: (user_id, tenant_id)
+        
+    Raises:
+        HTTPException: 401 如果 Session 无效或过期
+        
+    注意:
+        - SESSIONID 由 GSUC 服务器生成并设置到 Cookie
+        - 前端需要从 Cookie 读取 SESSIONID 并放入 Token header
+        - 不是 Authorization header，是 Token header
+    """
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="未登录：缺少 Token header (SESSIONID)"
+        )
+    
+    # TODO: 实现 GSUC Session 验证
+    # 方案 A: 调用 GSUC API 验证 Session
+    # from src.providers.gsuc_session import GSUCSessionManager
+    # session_manager = GSUCSessionManager()
+    # user_info = await session_manager.verify_session(token)
+    
+    # 方案 B: 从 Redis 缓存中获取 Session 信息
+    # user_info = get_session_from_redis(token)
+    
+    # 临时实现：直接从数据库查询
+    # 生产环境需要实现真实的 GSUC Session 验证
+    logger.warning("GSUC Session verification not implemented, using mock")
+    
+    # Mock implementation for development
+    # 实际生产环境需要调用 GSUC API 或查询 Redis
+    user_info = {
+        "user_id": "user_gsuc_mock",
+        "tenant_id": "tenant_gsuc_mock"
+    }
+    
+    # 验证用户是否存在
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_id(user_info["user_id"])
+    
+    if not user:
+        # 如果用户不存在，创建新用户
+        user = user_repo.create(
+            user_id=user_info["user_id"],
+            username="gsuc_mock_user",
+            tenant_id=user_info["tenant_id"],
+            is_active=True
+        )
+        logger.info(f"Created new GSUC user: {user_info['user_id']}")
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=401,
+            detail="用户已被停用"
+        )
+    
+    logger.debug(f"GSUC Session verified: user_id={user_info['user_id']}, tenant_id={user_info['tenant_id']}")
+    return user_info["user_id"], user_info["tenant_id"]
 
 
 async def get_current_user_id(

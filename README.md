@@ -55,8 +55,14 @@
 ### 1. 环境要求
 
 - Python 3.11+
-- PostgreSQL 14+ (可选,用于持久化)
 - Redis 6+ (可选,用于消息队列)
+- PostgreSQL 14+ (可选,生产环境推荐)
+
+**数据库选择**:
+- 开发环境: SQLite (默认,无需安装)
+- 生产环境: PostgreSQL (推荐,支持多 Worker 并发)
+
+详细迁移指南: [PostgreSQL 迁移指南](docs/POSTGRESQL_MIGRATION_GUIDE.md)
 
 ### 2. 安装依赖
 
@@ -271,6 +277,10 @@ curl "http://localhost:8000/api/v1/tasks/{task_id}/artifacts" \
 - [需求文档](.kiro/specs/meeting-minutes-agent/requirements.md) - 48个需求
 - [设计文档](.kiro/specs/meeting-minutes-agent/design.md) - 完整架构设计
 - [任务列表](.kiro/specs/meeting-minutes-agent/tasks.md) - 31个实施任务
+
+### 数据库
+- ⭐ [PostgreSQL 迁移指南](docs/POSTGRESQL_MIGRATION_GUIDE.md) - 完整迁移步骤
+- [数据库迁移指南](docs/database_migration_guide.md) - 数据库设计和迁移
 
 ### 迁移指南
 - [迁移实施计划](docs/迁移实施计划.md)

@@ -131,6 +131,33 @@ class GeminiConfig(BaseModel):
         return v
 
 
+class GSUCConfig(BaseModel):
+    """GSUC OAuth2.0 配置"""
+
+    appid: str = Field(..., description="应用 ID (向运维申请)")
+    appsecret: str = Field(..., description="应用密钥 (向运维申请)")
+    encryption_key: str = Field(..., description="加密密钥 (向运维申请)")
+    login_url: str = Field(
+        default="https://gsuc.gamesci.com.cn/sso/login",
+        description="GSUC 登录页面 URL"
+    )
+    userinfo_url: str = Field(
+        default="https://gsuc.gamesci.com.cn/sso/userinfo",
+        description="GSUC 用户信息 API URL"
+    )
+    callback_url: str = Field(..., description="回调地址 (需要在 GSUC 白名单中)")
+    timeout: int = Field(default=30, description="超时时间(秒)")
+    enabled: bool = Field(default=False, description="是否启用 GSUC 认证")
+
+    @field_validator("appid", "appsecret", "encryption_key")
+    @classmethod
+    def validate_not_empty(cls, v: str) -> str:
+        """验证字段非空"""
+        if not v or not v.strip():
+            raise ValueError("字段不能为空")
+        return v
+
+
 class LogConfig(BaseModel):
     """日志配置"""
 
@@ -215,6 +242,7 @@ class AppConfig(BaseModel):
     azure: AzureConfig
     iflytek: IFlyTekConfig
     gemini: GeminiConfig
+    gsuc: Optional[GSUCConfig] = Field(None, description="GSUC OAuth2.0 配置 (可选)")
     log: LogConfig = Field(default_factory=LogConfig)
     queue: QueueConfig = Field(default_factory=QueueConfig)
     storage: StorageConfig

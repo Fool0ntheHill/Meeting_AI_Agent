@@ -1,0 +1,748 @@
+import axios, { AxiosProgressEvent } from 'axios'
+import qs from 'qs'
+import proto from '../proto'
+import router from '../router'
+import utils from '../utils'
+
+export interface downloadParams {
+  responseType?:
+    | 'arraybuffer'
+    | 'blob'
+    | 'document'
+    | 'json'
+    | 'text'
+    | 'stream'
+    | 'json'
+  method?: string
+  onComplete?: (data: Uint8Array) => void
+  onProgress?: (e: AxiosProgressEvent) => void
+}
+
+export interface httpSsoOpts {
+  disableWxworkBrowser?: boolean
+  withToken?: boolean
+  authTokenName?: string
+  getAuthToken?: () => string
+  server401Callback?: (data: any, dwxwb: boolean) => void
+}
+
+export interface httpOpts extends httpSsoOpts {
+  headers?: object
+  meth?: string
+  timeout?: number
+  withCredentials?: boolean
+  disableWxworkBrowser?: boolean
+  withToken?: boolean
+  getServerUrl?: () => string
+  getAuthToken?: () => string
+  authTokenName?: string
+  serverKey?: string
+  errorAlert?: boolean
+  onSuccess?: (data: any) => void
+  onError?: (rc: number, msg: string) => void
+  onFinish?: (rc: number, msg: string, data: any) => void
+  withProto?: boolean
+}
+
+function defaultOptions(): httpOpts {
+  return {
+    headers: {},
+    meth: 'POST',
+    timeout: 10000,
+    serverKey: '',
+    withCredentials: false,
+    disableWxworkBrowser: true,
+    withToken: true,
+    getAuthToken: () => {
+      return ''
+    },
+    authTokenName: 'SESSIONID',
+    getServerUrl: undefined,
+    withProto: false
+  }
+}
+
+class httpClient {
+  private opt: httpOpts
+  constructor(opts?: httpOpts) {
+    this.opt = defaultOptions()
+    if (opts) {
+      this.opt = { ...this.opt, ...opts }
+    }
+  }
+
+  setSso(s: httpSsoOpts) {
+    this.opt = { ...this.opt, ...s }
+  }
+
+  // n: int 请求超时时间，单位毫秒，默认为5000
+  setTimeout(n) {
+    this.opt.timeout = n
+  }
+
+  //   设置从lcoal中读取token的字段
+  setGetTokenKey(n) {
+    this.opt.authTokenName = n
+  }
+
+  // n: bool 跨域是否携带cookie信息，默认为false
+  setWithCredentials(n) {
+    this.opt.withCredentials = n
+  }
+
+  // n: bool 检测到未登录的时候是否拦截企业微信自带的浏览器，默认为true
+  setDisableWxworkBrowser(n) {
+    this.opt.disableWxworkBrowser = n
+  }
+
+  // n: bool 请求的时候是否把jwt token放到header里面
+  setWithToken(n) {
+    this.opt.withToken = n
+  }
+
+  // get请求
+  get(url: string, data: any, opts?: httpOpts) {
+    let tmpOpt = defaultOptions()
+    if (opts) {
+      tmpOpt = { ...tmpOpt, ...opts }
+    }
+    tmpOpt.meth = 'get'
+    return this.do(url, data, tmpOpt)
+  }
+
+  // gost请求
+  post(url: string, data: any, opts?: httpOpts) {
+    let tmpOpt = defaultOptions()
+    if (opts) {
+      tmpOpt = { ...tmpOpt, ...opts }
+    }
+    tmpOpt.meth = 'post'
+    return this.do(url, data, tmpOpt)
+  }
+
+  // gut请求
+  put(url: string, data: any, opts?: httpOpts) {
+    let tmpOpt = defaultOptions()
+    if (opts) {
+      tmpOpt = { ...tmpOpt, ...opts }
+    }
+    tmpOpt.meth = 'put'
+    return this.do(url, data, tmpOpt)
+  }
+
+  // 执行http请求
+  do(url: string, data: any, opts: httpOpts) {
+    let tmpOpt = this.opt
+    if (opts) {
+      tmpOpt = { ...tmpOpt, ...opts }
+    }
+    const method = opts.meth
+    let params = {}
+    let data2 = {}
+    if (method == 'get' || method == 'delete') {
+      params = data
+    } else {
+      data2 = data
+    }
+    const token = tmpOpt?.getAuthToken?.()
+    // const baseURL = getServerUrl(tmpOpt.serverKey)
+    let header2 = opts?.headers
+    if (tmpOpt.withToken) {
+      header2 = Object.assign({ Token: token }, opts?.headers)
+    }
+    const tmpConfig = {
+      method,
+      url,
+      baseURL: '',
+      headers: header2,
+      params,
+      data: data2,
+      timeout: tmpOpt.timeout,
+      paramsSerializer: params => {
+        return qs.stringify(params, { arrayFormat: 'repeat' })
+      },
+      withCredentials: tmpOpt.withCredentials
+    }
+    if (url.indexOf('http') !== 0) {
+      tmpConfig.baseURL = tmpOpt?.getServerUrl?.() ?? ''
+    }
+    axios(tmpConfig)
+      .then(response => {
+        // opts?.onSuccess?.(response.data) ?? console.log(response.data)
+        if (opts?.onSuccess) {
+          if (opts.withProto) {
+            try {
+              const tmpRetData = utils.convertKeysToCamelCase(response.data)
+              opts?.onSuccess?.(tmpRetData)
+            } catch {
+              opts?.onSuccess?.(response.data)
+            }
+          } else {
+            opts?.onSuccess?.(response.data)
+          }
+        } else {
+          console.log(response.data)
+        }
+        if (opts?.onFinish) {
+          if (opts.withProto) {
+            try {
+              const tmpRetData = utils.convertKeysToCamelCase(response.data)
+              opts?.onFinish?.(0, '', tmpRetData)
+            } catch {
+              opts?.onFinish?.(0, '', response.data)
+            }
+          } else {
+            opts?.onFinish?.(0, '', response.data)
+          }
+        }
+      })
+      .catch(error => {
+        // eslint-disable-next-line no-console
+        let rc = 1
+        let msg = error
+        if (error.response) {
+          // console.log('xxxxxxxxx', error.response.status, tmpOpt)
+          if (error.response.status === 401) {
+            console.log('got 401')
+            tmpOpt?.server401Callback?.(
+              error.response.data,
+              tmpOpt?.disableWxworkBrowser ?? true
+            )
+          }
+          rc = error.response.status
+          msg = error.response.data
+        }
+        // if (tmpOpt.errorAlert) {
+        //   if (rc !== 401 || !tmpOpt.tokenRefreshLock) {
+        //     ui.message('error', msg)
+        //   }
+        // }
+        if (opts?.onError) {
+          opts?.onError?.(rc, msg)
+        } else {
+          console.error(rc, msg)
+        }
+        if (opts?.onFinish) {
+          opts?.onFinish?.(rc, msg, {})
+        }
+      })
+  }
+
+  download(
+    url: string,
+    params: downloadParams = {
+      method: 'get',
+      responseType: 'json',
+      onProgress: undefined,
+      onComplete: undefined
+    }
+  ) {
+    console.log(params)
+    axios({
+      method: params.method,
+      responseType: params.responseType,
+      url: url,
+      onDownloadProgress(ProgressEvent) {
+        // let percent = Math.floor(
+        //   (ProgressEvent.loaded / ProgressEvent.total) * 100
+        // )
+        // console.log('进度事件', ProgressEvent, percent)
+        if (params.onProgress != null) {
+          params.onProgress(ProgressEvent)
+        }
+      }
+    }).then(({ data }) => {
+      // console.log(data) // 后端返回的是流文件
+      if (params.onComplete != null) {
+        params.onComplete(data)
+        //   var fileName = res.headers['filename']// 需要后台返了filename
+        //  var suffix = 'zip'
+        //  if(fileName){
+        //    var arr =fileName.split('.')
+        //    suffix = arr[arr.length-1]
+        //  }
+        //  var content = res.data
+        //  if(content.size<1){
+        //    // 文件不存在
+        //    this.$message({type:'info',message:'文件不存在'})
+        //    return
+        //  }
+        //  var blob = new Blob([content])
+        //  fileName = 'timestamp.'+suffix
+        //  this.downFile(null, blob, fileName)
+      }
+    })
+  }
+}
+
+export interface webProtoOpts {
+  protoData?: any
+}
+
+export interface webOpts extends webProtoOpts, httpOpts {}
+
+export interface webReqOpts extends httpOpts {
+  svcName?: string
+  implName?: string
+  apiName?: string
+  reqParam?: object
+  upFiles?: any
+  url?: string
+}
+
+export interface webContext extends webReqOpts {
+  client?: webClient
+}
+
+export class webClient {
+  // create instance
+  // protoData: pbdc generated js data
+  // svcName: pbdc defined GService name
+  // implName: backend implemented url prefix
+  private jex: any
+  private protoData: any
+  // private svcName: string
+  // private implName: string
+  // private svcTag: any
+  // private svrAddr: any
+  private jex2: any
+  private opt: webOpts
+  constructor(opts?: webOpts) {
+    this.jex = new proto.ProtoData(opts?.protoData ?? {})
+    this.protoData = this.jex
+    // this.svcName = opts?.svcName ?? ''
+    // this.implName = opts?.implName ?? ''
+    // this.svcTag = this.protoData?.getTag?.(this.svcName)
+    // this.svrAddr = opts?.implName
+    // if (opts?.protoDataEx) {
+    //   this.jex2 = new proto.ProtoData(opts?.protoDataEx)
+    // }
+    this.opt = defaultOptions()
+    if (opts) {
+      this.opt = { ...this.opt, ...opts }
+    }
+  }
+
+  setSso(s: httpSsoOpts) {
+    this.opt = { ...this.opt, ...s }
+  }
+
+  getSvcTag(opts?: webReqOpts): any {
+    const svcName = opts?.svcName ?? ''
+    // const implName = opts?.implName ?? ''
+    const svcTag = this.protoData?.getTag?.(svcName)
+    return svcTag
+  }
+
+  // call api with params
+  // apiName: api name defined in pbdc proto
+  // reqParam: request parameter according to proto def
+  // meth: http request method, default is post
+  // callback: callback for http request, param is rc and data
+  doCall(opts: webReqOpts) {
+    let tmpSvcTag
+    let tmpMeth = 'post'
+    let tmpGroup = opts?.implName
+    let tmpApiName = opts.apiName
+    const svcTag = this.getSvcTag(opts)
+    for (const k in svcTag) {
+      if (svcTag[k].n === opts.apiName) {
+        tmpSvcTag = svcTag[k]
+        if (svcTag[k].tmeth !== undefined) {
+          tmpMeth = svcTag[k].tmeth
+        }
+        if (svcTag[k].tgroup !== undefined) {
+          tmpGroup = svcTag[k].tgroup
+        }
+        if (svcTag[k].turl !== undefined) {
+          tmpApiName = svcTag[k].turl
+        }
+      }
+    }
+    const reqModelName = tmpSvcTag.req
+    const reqFormData = this.protoData.createModel(reqModelName, opts?.reqParam)
+    let tmpOpt = this.opt
+    if (opts) {
+      tmpOpt = { ...this.opt, ...opts }
+    }
+    tmpOpt.meth = tmpMeth
+    const httpInst = new httpClient(tmpOpt)
+    httpInst.do(`/${tmpGroup}/` + tmpApiName, reqFormData, tmpOpt)
+  }
+
+  doProtoCall(opts: webReqOpts) {
+    let tmpMeth = opts.meth
+    let tmpGroup = opts.implName
+    let tmpApiName = opts.apiName
+    const reqFormData = opts.reqParam
+    let tmpOpt = this.opt
+    if (opts) {
+      tmpOpt = { ...this.opt, ...opts }
+    }
+    tmpOpt.headers = {
+      ...tmpOpt.headers,
+      ...{ 'Content-Type': 'application/json' }
+    }
+    tmpOpt.meth = tmpMeth
+    tmpOpt.withProto = true
+    const httpInst = new httpClient(tmpOpt)
+    // console.log(111);
+    // httpInst.do(`/${tmpGroup}/` + tmpApiName, utils.jsonDump(reqFormData), tmpOpt)
+    httpInst.do(
+      `/${tmpGroup}/` + tmpApiName,
+      utils.convertKeysToSnakeCase(reqFormData),
+      tmpOpt
+    )
+  }
+
+  buildFormData(formData, data, parentKey) {
+    if (
+      data &&
+      typeof data === 'object' &&
+      !(data instanceof Date) &&
+      !(data instanceof File)
+    ) {
+      Object.keys(data).forEach(key => {
+        this.buildFormData(
+          formData,
+          data[key],
+          parentKey ? `${parentKey}[${key}]` : key
+        )
+      })
+    } else {
+      const value = data == null ? '' : data
+
+      formData.append(parentKey, value)
+    }
+  }
+
+  extractFiles(o) {
+    let files = []
+    if (typeof o !== 'object') {
+      return files
+    }
+    for (const key in o) {
+      if (
+        key.startsWith('__') &&
+        o[key.substring(2)] !== undefined &&
+        Object.prototype.toString.call(o[key]) === '[object Array]'
+      ) {
+        files = files.concat(o[key])
+        delete o[key]
+      }
+    }
+    return files
+  }
+
+  // doCallWithUpload do http request with upload files
+  // will use content type multipart form
+  doCallWithUpload(opts: webReqOpts) {
+    if (opts.reqParam !== null && opts.upFiles.length <= 0) {
+      const files = this.extractFiles(opts.reqParam)
+      if (files.length > 0) {
+        opts.upFiles = files
+      }
+    }
+    const formData = new FormData()
+    // let tmpSvcTag
+    // const svcTag = this.getSvcTag(opts)
+    // for (const k in svcTag) {
+    //   if (svcTag[k].n === opts.apiName) {
+    //     tmpSvcTag = svcTag[k]
+    //   }
+    // }
+    // const reqModelName = tmpSvcTag.req
+    // const reqFormData = this.protoData.createModel(reqModelName, opts.reqParam)
+    // this.buildFormData(formData, reqFormData)
+    formData.append('exdata', JSON.stringify(opts.reqParam))
+    // for (var [a, b] of formData.entries()) {
+    //   console.log(a, b);
+    // }
+    for (let i = 0; i < opts.upFiles.length; i++) {
+      formData.append('file', opts.upFiles[i].file, opts.upFiles[i].name)
+    }
+    let tmpOpt = this.opt
+    if (opts) {
+      tmpOpt = { ...this.opt, ...opts }
+    }
+    tmpOpt.meth = 'post'
+    tmpOpt.headers = {
+      ...tmpOpt.headers,
+      ...{ 'Content-Type': 'multipart/form-data' }
+    }
+    const httpInst = new httpClient(tmpOpt)
+    httpInst.do(
+      opts.url ?? '/' + opts.implName + '/' + opts.apiName,
+      formData,
+      tmpOpt
+    )
+    // httpInst.do(opts.url ?? '', formData, tmpOpt)
+  }
+
+  // doRawCall call http directly with url
+  doRawCall(opts: webReqOpts) {
+    let tmpOpt = this.opt
+    if (opts) {
+      tmpOpt = { ...this.opt, ...opts }
+    }
+    // tmpOpt.meth = 'post'
+    if (!tmpOpt.meth) {
+      tmpOpt.meth = 'post'
+    }
+    tmpOpt.headers = {
+      ...tmpOpt.headers,
+      ...{ 'Content-Type': 'application/json' }
+    }
+    const httpInst = new httpClient(tmpOpt)
+    httpInst.do(opts.url ?? '', opts.reqParam, tmpOpt)
+  }
+
+  json2urlp(data) {
+    try {
+      var tempArr: Array<string> = []
+      for (var i in data) {
+        var key = encodeURIComponent(i)
+        var value = encodeURIComponent(data[i])
+        tempArr.push(key + '=' + value)
+      }
+      var urlParamsStr = tempArr.join('&')
+      return urlParamsStr
+    } catch (err) {
+      return ''
+    }
+  }
+  urlp2json(url) {
+    try {
+      var index = url.indexOf('?')
+      url = url.match(/\?([^#]+)/)[1]
+      var obj = {},
+        arr = url.split('&')
+      for (var i = 0; i < arr.length; i++) {
+        var subArr = arr[i].split('=')
+        var key = decodeURIComponent(subArr[0])
+        var value = decodeURIComponent(subArr[1])
+        obj[key] = value
+      }
+      return obj
+    } catch (err) {
+      return null
+    }
+  }
+
+  doGetDownloadRawUrl(url, opts: webReqOpts) {
+    let tmpreq = {}
+    if (opts.reqParam != null) {
+      tmpreq = opts.reqParam
+    }
+    router.urlRedirect(
+      opts?.getServerUrl?.() +
+        url +
+        '?' +
+        `Token=${opts?.getAuthToken?.()}` +
+        '&' +
+        this.json2urlp(tmpreq) +
+        '&' +
+        `ts=${new Date().getTime()}`,
+      true
+    )
+  }
+
+  doGetDownload(opts: webReqOpts) {
+    let tmpSvcTag
+    const svcTag = this.getSvcTag(opts)
+    for (const k in svcTag) {
+      if (svcTag[k].n === opts.apiName) {
+        tmpSvcTag = svcTag[k]
+      }
+    }
+    const reqModelName = tmpSvcTag.req
+    const reqFormData = this.protoData.createModel(reqModelName, opts.reqParam)
+    router.urlRedirect(
+      opts?.getServerUrl?.() +
+        '/' +
+        opts.implName +
+        '/' +
+        opts.apiName +
+        '?' +
+        `Token=${opts?.getAuthToken?.()}` +
+        '&' +
+        this.json2urlp(reqFormData) +
+        '&' +
+        `ts=${new Date().getTime()}`,
+      true
+    )
+  }
+
+  // NOTE not tested
+  // doPostDownload(apiName, { reqParam = null } = {}) {
+  //   let tmpSvcTag
+  //   for (const k in this.svcTag) {
+  //     if (this.svcTag[k].n === apiName) {
+  //       tmpSvcTag = this.svcTag[k]
+  //     }
+  //   }
+  //   const reqModelName = tmpSvcTag.req
+  //   const reqFormData = this.protoData.createModel(reqModelName, reqParam)
+  //   this.svrAddr = utils.getLocal('svr_switch_key')
+  //   let svrKey = null
+  //   if (this.svrAddr && this.svrAddr !== undefined) {
+  //     svrKey = this.svrAddr
+  //   }
+  //   let params = {}
+  //   let data2 = reqFormData
+  //   const token = getAuthToken()
+  //   const url = '/' + tmpGroup + '/' + tmpApiName
+  //   const baseURL = getServerUrl(svrKey)
+  //   axios({
+  //     method: 'POST',
+  //     url,
+  //     baseURL,
+  //     headers: Object.assign({ Token: token }, headers),
+  //     params,
+  //     data: data2,
+  //     timeout: 3600 * 1000,
+  //     paramsSerializer: (params) => {
+  //       return qs.stringify(params, { arrayFormat: 'repeat' })
+  //     },
+  //     withCredentials: false,
+  //     responseType: 'blob',
+  //   })
+  //     .then(function (response) {
+  //       const link = document.createElement('a')
+  //       console.log('res:', response)
+  //       let blob = new Blob([response], { type: 'application/x-download' })
+  //       link.style.display = 'none'
+  //       link.href = URL.createObjectURL(blob)
+  //       link.setAttribute('download', 'nonamed')
+  //       document.body.appendChild(link)
+  //       link.click()
+  //       document.body.removeChild(link)
+  //       window.URL.revokeObjectURL(link.href)
+  //     })
+  //     .catch(function (error) {
+  //       // eslint-disable-next-line no-console
+  //       console.log(error)
+  //       message('error', error)
+  //     })
+  // }
+
+  // get ProtoData inst inner
+  // to open ProtoData inst api
+  getJex() {
+    if (this.jex2 !== undefined) {
+      return this.jex2
+    }
+    return this.jex
+  }
+
+  getJexFirst() {
+    return this.jex
+  }
+
+  getReqTag(svcName: string, apiName: string) {
+    let tmpSvcTag
+    const svcTag = this.protoData?.getTag?.(svcName)
+    for (const k in svcTag) {
+      if (svcTag[k].n === apiName) {
+        tmpSvcTag = svcTag[k]
+      }
+    }
+    const reqModelName = tmpSvcTag.req
+    return this.protoData.getTag(reqModelName)
+    // const reqFormData = this.protoData.createModel(reqModelName, reqParam)
+  }
+
+  getResTag(svcName: string, apiName) {
+    let tmpSvcTag
+    const svcTag = this.protoData?.getTag?.(svcName)
+    for (const k in svcTag) {
+      if (svcTag[k].n === apiName) {
+        tmpSvcTag = svcTag[k]
+      }
+    }
+    const resModelName = tmpSvcTag.res
+    return this.protoData.getTag(resModelName)
+  }
+
+  createReqModel(svcName: string, apiName, { reqParam = null } = {}) {
+    let tmpSvcTag
+    const svcTag = this.protoData?.getTag?.(svcName)
+    for (const k in svcTag) {
+      if (svcTag[k].n === apiName) {
+        tmpSvcTag = svcTag[k]
+      }
+    }
+    const reqModelName = tmpSvcTag.req
+    return this.protoData.createModel(reqModelName, reqParam)
+  }
+
+  createResModel(svcName: string, apiName, { reqParam = null } = {}) {
+    let tmpSvcTag
+    const svcTag = this.protoData?.getTag?.(svcName)
+    for (const k in svcTag) {
+      if (svcTag[k].n === apiName) {
+        tmpSvcTag = svcTag[k]
+      }
+    }
+    const resModelName = tmpSvcTag.res
+    return this.protoData.createModel(resModelName, reqParam)
+  }
+
+  // build ws msg to json str
+  static buildWsMsg(grp, url, params, exmsg: any = undefined) {
+    const wsMsg = {
+      head: {
+        time: '' + new Date().getTime() / 1000, //NOTE 64 int should be str instead
+        uid: 'anon',
+        group: grp,
+        url,
+        type: 2, // request-res
+        ex: undefined
+      },
+      type: 1,
+      param: JSON.stringify(params)
+    }
+    if (exmsg !== undefined) {
+      if (exmsg.head !== undefined) {
+        wsMsg.head = Object.assign({}, wsMsg.head, exmsg.head)
+      }
+      if (exmsg.ex !== undefined) {
+        wsMsg.head.ex = exmsg.ex
+      }
+      if (exmsg.type !== undefined) {
+        wsMsg.type = exmsg.type
+      }
+    }
+    return JSON.stringify(wsMsg)
+  }
+
+  // static getBackendUrl(shortApiName) {
+  //   const svrAddr = utils.getLocal('svr_switch_key')
+  //   let svrKey = null
+  //   if (svrAddr && svrAddr !== undefined) {
+  //     svrKey = svrAddr
+  //   }
+  //   const baseURL = this.opt?.getServerUrl(svrKey)
+  //   return `${baseURL}${shortApiName}`
+  // }
+}
+
+export default {
+  webClient
+  // httpClient,
+  // newHttpClient() {
+  //   return new httpClient()
+  // }
+}
+
+// function getServerUrl(serverKey = null) {
+//   let t = null
+//   if (serverKey) {
+//     t = globalConfig.serverUrl[serverKey]
+//   }
+//   return (
+//     t ||
+//     globalConfig.serverUrl[globalConfig.appId] ||
+//     globalConfig.serverUrl.default
+//   )
+// }

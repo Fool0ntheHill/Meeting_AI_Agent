@@ -10,6 +10,7 @@ pydantic-settings>=2.1.0
 sqlalchemy==2.0.25
 alembic==1.13.1
 asyncpg==0.29.0  # PostgreSQL async driver
+psycopg2-binary==2.9.9  # PostgreSQL sync driver (for SQLAlchemy)
 
 # 缓存与消息队列
 redis==5.0.1
@@ -43,6 +44,7 @@ python-dotenv==1.0.0
 python-multipart==0.0.6  # 文件上传
 python-jose[cryptography]==3.3.0  # JWT
 passlib[bcrypt]==1.7.4  # 密码哈希
+pycryptodome==3.19.0  # GSUC OAuth2.0 加密
 
 # 监控
 prometheus-client==0.19.0

@@ -8,15 +8,19 @@ api_port: 8000
 worker_count: 2
 
 # 数据库配置
+# SQLite (开发环境简单配置)
 database:
-  host: ${DB_HOST:localhost}
-  port: ${DB_PORT:5432}
-  database: ${DB_NAME:meeting_agent_dev}
-  username: ${DB_USER:postgres}
-  password: ${DB_PASSWORD:postgres}
-  pool_size: 10
-  max_overflow: 20
+  url: "sqlite:///./meeting_agent.db"
   echo: true
+
+# PostgreSQL (生产环境推荐配置)
+# database:
+#   url: "postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+#   pool_size: 10
+#   max_overflow: 20
+#   pool_timeout: 30
+#   pool_recycle: 3600
+#   echo: false
 
 # Redis 配置
 redis:

@@ -19,7 +19,7 @@ _engine: Optional[Engine] = None
 _SessionLocal: Optional[sessionmaker] = None
 
 
-def get_engine(database_url: str = "sqlite:///./meeting_agent.db", echo: bool = False) -> Engine:
+def get_engine(database_url: str = "sqlite:///./meeting_agent.db", echo: bool = False, **kwargs) -> Engine:
     """
     获取或创建数据库引擎
     
@@ -29,6 +29,7 @@ def get_engine(database_url: str = "sqlite:///./meeting_agent.db", echo: bool = 
             - PostgreSQL: "postgresql://user:password@localhost/dbname"
             - MySQL: "mysql+pymysql://user:password@localhost/dbname"
         echo: 是否打印 SQL 语句
+        **kwargs: 额外的引擎参数 (pool_size, max_overflow, pool_timeout, pool_recycle)
     
     Returns:
         Engine: SQLAlchemy 引擎
@@ -53,16 +54,35 @@ def get_engine(database_url: str = "sqlite:///./meeting_agent.db", echo: bool = 
                 cursor.close()
         else:
             # PostgreSQL/MySQL 配置
-            _engine = create_engine(
-                database_url,
-                echo=echo,
-                pool_size=10,  # 连接池大小
-                max_overflow=20,  # 最大溢出连接数
-                pool_pre_ping=True,  # 连接前检查
-                pool_recycle=3600,  # 连接回收时间(秒)
-            )
+            engine_kwargs = {
+                "echo": echo,
+                "pool_pre_ping": True,  # 连接前检查
+            }
+            
+            # 添加连接池配置
+            if "pool_size" in kwargs:
+                engine_kwargs["pool_size"] = kwargs["pool_size"]
+            else:
+                engine_kwargs["pool_size"] = 10
+                
+            if "max_overflow" in kwargs:
+                engine_kwargs["max_overflow"] = kwargs["max_overflow"]
+            else:
+                engine_kwargs["max_overflow"] = 20
+                
+            if "pool_timeout" in kwargs:
+                engine_kwargs["pool_timeout"] = kwargs["pool_timeout"]
+            else:
+                engine_kwargs["pool_timeout"] = 30
+                
+            if "pool_recycle" in kwargs:
+                engine_kwargs["pool_recycle"] = kwargs["pool_recycle"]
+            else:
+                engine_kwargs["pool_recycle"] = 3600
+            
+            _engine = create_engine(database_url, **engine_kwargs)
 
-        logger.info(f"Database engine created: {database_url}")
+        logger.info(f"Database engine created: {database_url.split('@')[-1] if '@' in database_url else database_url}")
 
     return _engine
 

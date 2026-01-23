@@ -97,13 +97,23 @@ class ArtifactGenerationService:
                 logger.warning("No prompt_instance provided, using default")
             elif isinstance(prompt_instance, dict):
                 # 如果是 dict，转换为 PromptInstance 对象
+                logger.info(f"Converting dict to PromptInstance: {prompt_instance.get('template_id')}")
+                logger.info(f"Dict keys: {list(prompt_instance.keys())}")
+                logger.info(f"Has prompt_text: {'prompt_text' in prompt_instance}")
+                if 'prompt_text' in prompt_instance:
+                    logger.info(f"prompt_text length: {len(prompt_instance['prompt_text'])} chars")
+                    logger.info(f"prompt_text preview: {prompt_instance['prompt_text'][:200]}")
                 prompt_instance = PromptInstance(**prompt_instance)
-                logger.info(f"Converted dict to PromptInstance: {prompt_instance.template_id}")
+                logger.info(f"Converted to PromptInstance object, prompt_text: {prompt_instance.prompt_text[:200] if prompt_instance.prompt_text else 'None'}")
             
             # 2. 获取模板
             if template is None:
+                # 特殊处理：__blank__ 表示使用临时空白模板（只使用 custom_instructions）
+                if prompt_instance.template_id == "__blank__":
+                    logger.info("Using temporary blank template with custom instructions")
+                    template = self._create_blank_template(artifact_type, prompt_instance)
                 # 如果没有提供 template 且没有配置 template_repo，使用默认模板
-                if self.templates is None:
+                elif self.templates is None:
                     logger.warning("Template repository not configured, using default template")
                     template = self._get_default_template(artifact_type, prompt_instance.language)
                 else:
@@ -276,22 +286,22 @@ class ArtifactGenerationService:
         Returns:
             PromptTemplate: 默认模板
         """
-        # 默认的会议纪要模板
-        default_prompt = """请根据以下会议转写内容，生成一份结构化的会议纪要。
+        # 默认的通用内容生成模板
+        default_prompt = """请根据以下转写内容，生成一份结构化的分析文档。
 
-会议转写内容：
+转写内容：
 {transcript}
 
-请按以下格式输出会议纪要：
+请按以下格式输出：
 
-## 会议概要
-[简要概述会议的主要内容和目的]
+## 内容概要
+[简要概述主要内容和目的]
 
 ## 讨论要点
-[列出会议中讨论的主要议题和观点]
+[列出讨论的主要议题和观点]
 
 ## 决策事项
-[列出会议中达成的决策]
+[列出达成的决策]
 
 ## 行动项
 [列出需要跟进的行动项，包括负责人]
@@ -302,15 +312,49 @@ class ArtifactGenerationService:
 请确保内容准确、简洁、结构清晰。"""
 
         return PromptTemplate(
-            template_id="default_meeting_minutes",
-            title="默认会议纪要模板",
-            description="用于生成会议纪要的默认模板",
+            template_id="default_content_template",
+            title="默认内容生成模板",
+            description="用于生成结构化内容的默认模板",
             prompt_body=default_prompt,
             artifact_type=artifact_type,
             supported_languages=[language, "zh-CN", "en-US"],  # 支持当前语言和常用语言
             parameter_schema={
-                "transcript": {"type": "string", "description": "会议转写内容"}
+                "transcript": {"type": "string", "description": "转写内容"}
             },
             is_system=True,
             scope="global",
+        )
+    
+    def _create_blank_template(self, artifact_type: str, prompt_instance: PromptInstance) -> PromptTemplate:
+        """
+        创建空白模板（使用用户的 prompt_text）
+        
+        Args:
+            artifact_type: 内容类型
+            prompt_instance: 提示词实例（包含 prompt_text）
+            
+        Returns:
+            PromptTemplate: 空白模板
+        """
+        # 使用用户的 prompt_text，如果没有则使用简单的默认提示
+        if prompt_instance.prompt_text:
+            blank_prompt = prompt_instance.prompt_text
+            logger.info(f"Using user's prompt_text for blank template: {blank_prompt[:100]}...")
+        else:
+            # 如果用户没有提供 prompt_text，使用最简单的提示
+            blank_prompt = "请根据以下会议转写内容生成会议纪要：\n\n{transcript}"
+            logger.warning("No prompt_text provided for blank template, using minimal default")
+        
+        return PromptTemplate(
+            template_id="__blank__",
+            title="临时空白模板",
+            description="使用用户自定义提示词的临时模板",
+            prompt_body=blank_prompt,
+            artifact_type=artifact_type,
+            supported_languages=[prompt_instance.language, "zh-CN", "en-US"],
+            parameter_schema={
+                "transcript": {"type": "string", "description": "会议转写内容"}
+            },
+            is_system=False,
+            scope="user",
         )

@@ -632,6 +632,26 @@ class ArtifactRepository:
             .all()
         )
 
+    def delete(self, artifact_id: str) -> bool:
+        """
+        删除生成内容
+        
+        Args:
+            artifact_id: 生成内容 ID
+            
+        Returns:
+            bool: 删除成功返回 True，artifact 不存在返回 False
+        """
+        artifact = self.get_by_id(artifact_id)
+        if not artifact:
+            logger.warning(f"Artifact not found for deletion: {artifact_id}")
+            return False
+        
+        self.session.delete(artifact)
+        self.session.flush()
+        logger.info(f"Artifact deleted: {artifact_id}")
+        return True
+    
     def to_generated_artifact(self, record: GeneratedArtifactRecord) -> GeneratedArtifact:
         """将数据库记录转换为 GeneratedArtifact"""
         prompt_instance_dict = record.get_prompt_instance_dict()

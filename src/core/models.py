@@ -177,21 +177,46 @@ class PromptTemplate(BaseModel):
 
 
 class PromptInstance(BaseModel):
-    """提示词实例"""
+    """提示词实例 - 用户实际使用的提示词"""
 
-    template_id: str = Field(..., description="模板 ID")
+    template_id: str = Field(..., description="模板 ID（可以是 __blank__ 表示空白模板）")
     language: str = Field(default="zh-CN", description="语言")
-    parameters: Dict[str, Any] = Field(default_factory=dict, description="参数值")
+    prompt_text: Optional[str] = Field(default=None, description="用户编辑后的完整提示词文本（如果提供，则优先使用此文本而不是从模板加载）")
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="参数值（用于模板占位符替换）")
+    custom_instructions: Optional[str] = Field(default=None, description="用户补充指令（追加到提示词之后）")
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "template_id": "tpl_001",
-                "language": "zh-CN",
-                "parameters": {
-                    "meeting_description": "会议标题: 产品规划会议\n会议主题: Q2 产品路线图讨论\n关注重点: 重点关注用户反馈和竞品分析"
+            "examples": [
+                {
+                    "description": "场景1: 使用模板，不修改",
+                    "value": {
+                        "template_id": "tpl_001",
+                        "language": "zh-CN",
+                        "parameters": {
+                            "meeting_description": "产品规划会议"
+                        }
+                    }
                 },
-            }
+                {
+                    "description": "场景2: 使用模板，但用户修改了提示词",
+                    "value": {
+                        "template_id": "tpl_001",
+                        "language": "zh-CN",
+                        "prompt_text": "请生成简洁的会议纪要，重点关注决策事项。\n\n会议转写：\n{transcript}",
+                        "parameters": {}
+                    }
+                },
+                {
+                    "description": "场景3: 空白模板，用户完全自定义",
+                    "value": {
+                        "template_id": "__blank__",
+                        "language": "zh-CN",
+                        "prompt_text": "请分析这次会议，提取关键技术决策和风险点。\n\n{transcript}",
+                        "parameters": {}
+                    }
+                }
+            ]
         }
     }
 

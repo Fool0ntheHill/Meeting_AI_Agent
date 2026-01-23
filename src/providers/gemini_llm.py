@@ -121,6 +121,11 @@ class GeminiLLM(LLMProvider):
                 meeting_date=kwargs.get("meeting_date"),
                 meeting_time=kwargs.get("meeting_time"),
             )
+            
+            # 【调试日志】输出实际发送给 Gemini 的提示词
+            logger.info(f"=== PROMPT SENT TO GEMINI (first 500 chars) ===")
+            logger.info(f"{prompt[:500]}")
+            logger.info(f"=== PROMPT LENGTH: {len(prompt)} chars ===")
 
             # 4. 构建 JSON Schema（如果模板提供了）
             response_schema = self._build_response_schema(template)
@@ -131,7 +136,7 @@ class GeminiLLM(LLMProvider):
             # 5. 解析响应
             content_dict = self._parse_response(response_text, template.artifact_type)
 
-            # 6. 构建 metadata (包含 token 使用信息)
+            # 6. 构建 metadata (包含 token 使用信息和提示词信息)
             metadata = kwargs.get("metadata", {}) or {}
             metadata.update({
                 "llm_model": self.config.model,
@@ -139,6 +144,28 @@ class GeminiLLM(LLMProvider):
                 "prompt_token_count": usage_metadata.get("prompt_token_count", 0),
                 "candidates_token_count": usage_metadata.get("candidates_token_count", 0),
             })
+            
+            # 保存提示词信息（用于 Workspace 查看）
+            prompt_metadata = {
+                "template_id": prompt_instance.template_id,
+                "language": prompt_instance.language,
+                "parameters": prompt_instance.parameters,
+            }
+            
+            # 保存用户编辑的提示词文本（如果有）
+            if prompt_instance.prompt_text:
+                prompt_metadata["prompt_text"] = prompt_instance.prompt_text
+                prompt_metadata["is_user_edited"] = True
+            else:
+                # 没有 prompt_text，使用模板原文
+                prompt_metadata["prompt_text"] = template.prompt_body
+                prompt_metadata["is_user_edited"] = False
+            
+            # 保存补充指令（如果有）
+            if prompt_instance.custom_instructions:
+                prompt_metadata["custom_instructions"] = prompt_instance.custom_instructions
+            
+            metadata["prompt"] = prompt_metadata
 
             # 7. 构建 GeneratedArtifact
             artifact = GeneratedArtifact(
@@ -188,8 +215,15 @@ class GeminiLLM(LLMProvider):
         Returns:
             str: 完整提示词
         """
-        # 1. 从模板获取 prompt_body
-        prompt_body = template.prompt_body
+        # 1. 获取提示词主体
+        # 优先使用用户编辑后的 prompt_text，如果没有则使用模板的 prompt_body
+        if prompt_instance.prompt_text:
+            prompt_body = prompt_instance.prompt_text
+            logger.info(f"Using user-edited prompt_text from prompt_instance (length: {len(prompt_instance.prompt_text)} chars)")
+            logger.info(f"prompt_text preview: {prompt_instance.prompt_text[:200]}")
+        else:
+            prompt_body = template.prompt_body
+            logger.info(f"Using prompt_body from template: {template.template_id} (length: {len(template.prompt_body)} chars)")
 
         # 2. 替换参数占位符
         for param_name, param_value in prompt_instance.parameters.items():
@@ -197,29 +231,43 @@ class GeminiLLM(LLMProvider):
             if placeholder in prompt_body:
                 prompt_body = prompt_body.replace(placeholder, str(param_value))
 
-        # 3. 添加会议元数据（如果有）
-        if meeting_date or meeting_time:
+        # 3. 添加用户补充指令（如果有）
+        if prompt_instance.custom_instructions:
+            prompt_body += f"\n\n## 用户补充要求\n{prompt_instance.custom_instructions}"
+            logger.info(f"Added custom instructions to prompt: {prompt_instance.custom_instructions[:100]}...")
+
+        # 4. 添加会议元数据（如果有，且不是空白模板）
+        # 空白模板不添加会议相关的标题，避免暗示生成会议内容
+        is_blank_template = template.template_id == "__blank__"
+        if (meeting_date or meeting_time) and not is_blank_template:
             from src.utils.meeting_metadata import format_meeting_datetime
             datetime_str = format_meeting_datetime(meeting_date, meeting_time)
             if datetime_str:
                 prompt_body += f"\n\n## 会议时间\n{datetime_str}"
 
-        # 4. 替换转写文本占位符
+        # 5. 替换转写文本占位符
         if "{transcript}" in prompt_body:
             prompt_body = prompt_body.replace("{transcript}", formatted_transcript)
         else:
             # 如果模板中没有 {transcript} 占位符，则追加到末尾
-            prompt_body += f"\n\n## 会议转写\n{formatted_transcript}"
+            # 空白模板不添加"## 会议转写"标题，避免暗示生成会议内容
+            if is_blank_template:
+                prompt_body += f"\n\n{formatted_transcript}"
+            else:
+                prompt_body += f"\n\n## 会议转写\n{formatted_transcript}"
 
-        # 5. 添加输出语言指令
-        language_instruction = self._get_language_instruction(output_language)
-        prompt_body += f"\n\n{language_instruction}"
+        # 6. 添加输出语言指令
+        # 注意：如果用户使用了自定义 prompt_text（空白模板），则不添加语言指令
+        # 因为用户的 prompt_text 应该是完整的、自包含的提示词
+        if not (prompt_instance.prompt_text and is_blank_template):
+            language_instruction = self._get_language_instruction(output_language)
+            prompt_body += f"\n\n{language_instruction}"
 
         return prompt_body
 
     def _get_language_instruction(self, output_language: OutputLanguage) -> str:
         """
-        获取输出语言指令
+        获取输出语言指令（通用版本，不包含"会议纪要"等特定内容类型）
 
         Args:
             output_language: 输出语言
@@ -228,12 +276,12 @@ class GeminiLLM(LLMProvider):
             str: 语言指令
         """
         language_map = {
-            OutputLanguage.ZH_CN: "请使用中文生成会议纪要。",
-            OutputLanguage.EN_US: "Please generate the meeting minutes in English.",
-            OutputLanguage.JA_JP: "日本語で議事録を作成してください。",
-            OutputLanguage.KO_KR: "한국어로 회의록을 작성해 주세요.",
+            OutputLanguage.ZH_CN: "请使用中文输出。",
+            OutputLanguage.EN_US: "Please output in English.",
+            OutputLanguage.JA_JP: "日本語で出力してください。",
+            OutputLanguage.KO_KR: "한국어로 출력해 주세요.",
         }
-        return language_map.get(output_language, "请使用中文生成会议纪要。")
+        return language_map.get(output_language, "请使用中文输出。")
     
     def _build_response_schema(self, template: PromptTemplate) -> Dict[str, Any]:
         """
@@ -279,7 +327,7 @@ class GeminiLLM(LLMProvider):
 
         Args:
             prompt: 提示词
-            response_schema: JSON Schema 定义（可选）
+            response_schema: JSON Schema 定义（可选，如果为 None 则不限制输出格式）
 
         Returns:
             tuple[str, dict]: (响应文本（JSON 格式）, 使用统计信息)
@@ -289,6 +337,14 @@ class GeminiLLM(LLMProvider):
             LLMTokenLimitError: Token 超限
             RateLimitError: 速率限制
         """
+        # 【调试日志】输出实际发送给 Gemini 的提示词
+        logger.info(f"=== ACTUAL PROMPT SENT TO GEMINI API ===")
+        logger.info(f"Prompt length: {len(prompt)} chars")
+        logger.info(f"Has response_schema: {response_schema is not None}")
+        logger.info(f"First 800 chars: {prompt[:800]}")
+        logger.info(f"Last 200 chars: {prompt[-200:]}")
+        logger.info(f"=== END OF PROMPT ===")
+        
         last_error = None
 
         for attempt in range(self.config.max_retries):
@@ -298,7 +354,7 @@ class GeminiLLM(LLMProvider):
                     "max_output_tokens": self.config.max_tokens,
                     "temperature": self.config.temperature,
                     "response_mime_type": "application/json",  # 强制 JSON 输出
-                    "system_instruction": GLOBAL_SYSTEM_INSTRUCTION,  # 全局 System Instruction
+                    "system_instruction": GLOBAL_SYSTEM_INSTRUCTION,  # 全局 System Instruction（格式约束）
                 }
                 
                 # 如果提供了 schema，添加到配置中
@@ -505,12 +561,12 @@ class GeminiLLM(LLMProvider):
         """
         # 在实际使用中,模板由 PromptTemplateRepository 管理
         # 这里返回一个默认模板作为后备
-        return """你是一个专业的会议纪要助手。
+        return """你是一个专业的内容分析助手。
 
-请根据以下会议转写生成结构化的会议纪要,包含:
-1. 会议标题
+请根据以下转写内容生成结构化的分析结果,包含:
+1. 标题
 2. 参与者列表
-3. 会议摘要
+3. 内容摘要
 4. 关键要点
 5. 行动项
 
