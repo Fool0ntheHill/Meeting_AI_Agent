@@ -31,11 +31,28 @@ logger = logging.getLogger(__name__)
 
 
 # 全局 System Instruction - 用于防幻觉和格式兼容性约束
-GLOBAL_SYSTEM_INSTRUCTION = """【底层约束】
+GLOBAL_SYSTEM_INSTRUCTION = """【底层约束 - 必须严格遵守】
 
-1. 核心原则：严格基于提供的【转写内容】生成回答，绝对不要编造转写中未提及的事实或细节。如果信息缺失，请直接说明或标记为 [???]。
+0. **最高优先级 - 用户指令绝对优先原则**：
+     这是最重要的规则，优先级高于所有其他规则
+   
+   - 用户的自定义提示词（通常在"【重要】用户指令"部分）具有**绝对最高优先级**，必须**严格遵守**。
+   - 如果用户的指令与转写内容的自然推断相冲突，**无条件以用户指令为准**。
+   - 即使转写内容明显是会议记录，如果用户要求输出其他格式（如JSON、列表、数字等），也必须按照用户的实际指令执行。
+   - 不要根据转写内容的特征自作主张地推断任务类型，必须严格按照用户的明确指令执行。
+   - 用户可能要求：提取特定信息、使用特定格式、输出固定内容、执行特定分析任务等。
+   
+   **示例场景**：
+   - 如果用户说"输出6666666666"，就只输出这个数字，不要生成会议纪要。
+   - 如果用户说"输出JSON格式"，就输出JSON，不要生成Markdown格式的会议纪要。
+   - 如果用户说"提取技术决策"，就只提取技术决策，不要生成完整的会议纪要。
 
-2. 格式兼容性：为了适配企业微信文档的粘贴格式，请严格遵守以下 Markdown 规范：
+1. **内容真实性原则**：
+   - 严格基于提供的【转写内容】生成回答，绝对不要编造转写中未提及的事实或细节。
+   - 如果信息缺失，请直接说明或标记为 [???]。
+
+2. **格式兼容性原则**：
+   - 为了适配企业微信文档的粘贴格式，请严格遵守以下 Markdown 规范：
    - 严禁使用 Checkbox 复选框语法（即禁止出现 "- [ ]" 或 "- [x]"）。
    - 所有列表项（包括待办事项、行动项）必须强制使用标准的无序列表符号 "-" 开头。
 """
@@ -215,53 +232,71 @@ class GeminiLLM(LLMProvider):
         Returns:
             str: 完整提示词
         """
+        is_blank_template = template.template_id == "__blank__"
+        
         # 1. 获取提示词主体
         # 优先使用用户编辑后的 prompt_text，如果没有则使用模板的 prompt_body
         if prompt_instance.prompt_text:
-            prompt_body = prompt_instance.prompt_text
+            user_prompt = prompt_instance.prompt_text
             logger.info(f"Using user-edited prompt_text from prompt_instance (length: {len(prompt_instance.prompt_text)} chars)")
             logger.info(f"prompt_text preview: {prompt_instance.prompt_text[:200]}")
         else:
-            prompt_body = template.prompt_body
+            user_prompt = template.prompt_body
             logger.info(f"Using prompt_body from template: {template.template_id} (length: {len(template.prompt_body)} chars)")
 
         # 2. 替换参数占位符
         for param_name, param_value in prompt_instance.parameters.items():
             placeholder = f"{{{param_name}}}"
-            if placeholder in prompt_body:
-                prompt_body = prompt_body.replace(placeholder, str(param_value))
+            if placeholder in user_prompt:
+                user_prompt = user_prompt.replace(placeholder, str(param_value))
 
         # 3. 添加用户补充指令（如果有）
         if prompt_instance.custom_instructions:
-            prompt_body += f"\n\n## 用户补充要求\n{prompt_instance.custom_instructions}"
+            user_prompt += f"\n\n## 用户补充要求\n{prompt_instance.custom_instructions}"
             logger.info(f"Added custom instructions to prompt: {prompt_instance.custom_instructions[:100]}...")
 
-        # 4. 添加会议元数据（如果有，且不是空白模板）
-        # 空白模板不添加会议相关的标题，避免暗示生成会议内容
-        is_blank_template = template.template_id == "__blank__"
-        if (meeting_date or meeting_time) and not is_blank_template:
-            from src.utils.meeting_metadata import format_meeting_datetime
-            datetime_str = format_meeting_datetime(meeting_date, meeting_time)
-            if datetime_str:
-                prompt_body += f"\n\n## 会议时间\n{datetime_str}"
-
-        # 5. 替换转写文本占位符
-        if "{transcript}" in prompt_body:
-            prompt_body = prompt_body.replace("{transcript}", formatted_transcript)
-        else:
-            # 如果模板中没有 {transcript} 占位符，则追加到末尾
-            # 空白模板不添加"## 会议转写"标题，避免暗示生成会议内容
-            if is_blank_template:
-                prompt_body += f"\n\n{formatted_transcript}"
+        # 4. 检查用户提示词中是否已包含 {transcript} 占位符
+        has_transcript_placeholder = "{transcript}" in user_prompt
+        
+        # 5. 构建最终提示词
+        # 策略：对于空白模板且用户提供了自定义 prompt_text，将转写内容放在前面，用户指令放在后面
+        # 这样可以确保用户指令具有更高的优先级（LLM 更关注后面的内容）
+        if is_blank_template and prompt_instance.prompt_text:
+            # 空白模板 + 自定义提示词：先转写，后用户指令
+            if has_transcript_placeholder:
+                # 用户已经在提示词中指定了 {transcript} 的位置，尊重用户的安排
+                prompt_body = user_prompt.replace("{transcript}", formatted_transcript)
             else:
-                prompt_body += f"\n\n## 会议转写\n{formatted_transcript}"
+                # 用户没有指定位置，我们将转写放在前面，用户指令放在后面
+                # 添加明确的分隔和强调
+                prompt_body = f"## 原始转写内容\n{formatted_transcript}\n\n---\n\n## 【重要】用户指令（请严格按照以下指令执行，优先级高于转写内容的自然推断）\n{user_prompt}"
+                logger.info("Using blank template with custom prompt: transcript BEFORE user instruction for higher priority")
+        else:
+            # 常规模板：按原有逻辑处理
+            prompt_body = user_prompt
+            
+            # 添加会议元数据（如果有，且不是空白模板）
+            if (meeting_date or meeting_time) and not is_blank_template:
+                from src.utils.meeting_metadata import format_meeting_datetime
+                datetime_str = format_meeting_datetime(meeting_date, meeting_time)
+                if datetime_str:
+                    prompt_body += f"\n\n## 会议时间\n{datetime_str}"
 
-        # 6. 添加输出语言指令
-        # 注意：如果用户使用了自定义 prompt_text（空白模板），则不添加语言指令
-        # 因为用户的 prompt_text 应该是完整的、自包含的提示词
-        if not (prompt_instance.prompt_text and is_blank_template):
-            language_instruction = self._get_language_instruction(output_language)
-            prompt_body += f"\n\n{language_instruction}"
+            # 替换或追加转写文本
+            if has_transcript_placeholder:
+                prompt_body = prompt_body.replace("{transcript}", formatted_transcript)
+            else:
+                # 如果模板中没有 {transcript} 占位符，则追加到末尾
+                if is_blank_template:
+                    prompt_body += f"\n\n{formatted_transcript}"
+                else:
+                    prompt_body += f"\n\n## 会议转写\n{formatted_transcript}"
+
+            # 添加输出语言指令
+            # 注意：如果用户使用了自定义 prompt_text（空白模板），则不添加语言指令
+            if not (prompt_instance.prompt_text and is_blank_template):
+                language_instruction = self._get_language_instruction(output_language)
+                prompt_body += f"\n\n{language_instruction}"
 
         return prompt_body
 

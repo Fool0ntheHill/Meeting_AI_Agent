@@ -84,6 +84,7 @@ class PipelineService:
         skip_speaker_recognition: bool = False,
         hotword_set_id: Optional[str] = None,
         template=None,
+        cancellation_check=None,  # 新增：取消检查回调函数
         **kwargs,
     ) -> GeneratedArtifact:
         """
@@ -199,6 +200,12 @@ class PipelineService:
                 f"audio_url={audio_url[:100]}..., "
                 f"local_audio_path={local_audio_path}"
             )
+            
+            # 检查任务是否被取消
+            if cancellation_check and cancellation_check(task_id):
+                logger.info(f"Task {task_id}: Cancelled after transcription")
+                self._update_task_status(task_id, TaskState.CANCELLED)
+                raise Exception("Task cancelled by user")
             
             # 更新进度：转写完成 (40%)
             audio_duration = transcript.duration
@@ -333,6 +340,12 @@ class PipelineService:
                 
                 transcript = await self.correction.correct_speakers(transcript, speaker_mapping)
                 logger.info(f"Task {task_id}: Speaker correction completed")
+                
+                # 检查任务是否被取消
+                if cancellation_check and cancellation_check(task_id):
+                    logger.info(f"Task {task_id}: Cancelled after speaker correction")
+                    self._update_task_status(task_id, TaskState.CANCELLED)
+                    raise Exception("Task cancelled by user")
                 
                 # 更新进度：修正完成 (70%)
                 self._update_task_status(

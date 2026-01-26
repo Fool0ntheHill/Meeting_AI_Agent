@@ -4,6 +4,7 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -30,6 +31,8 @@ from src.database.repositories import (
 )
 from src.services.artifact_generation import ArtifactGenerationService
 from src.utils.logger import get_logger
+from src.utils.wecom_notification import get_wecom_service
+from src.config.loader import get_config
 
 logger = get_logger(__name__)
 
@@ -282,12 +285,9 @@ async def regenerate_artifact(
         # 转换转写记录为 TranscriptionResult
         transcript_result = transcript_repo.to_transcription_result(transcript)
         
-        # 创建 PromptInstance
-        prompt_instance = PromptInstance(
-            template_id=request.prompt_instance.template_id,
-            language=request.prompt_instance.language,
-            parameters=request.prompt_instance.parameters,
-        )
+        # 直接使用请求中的 prompt_instance，不要重新创建
+        # 这样可以保留 prompt_text 和其他字段
+        prompt_instance = request.prompt_instance
         
         # 获取当前最大版本号
         artifact_repo = ArtifactRepository(db)
@@ -297,25 +297,14 @@ async def regenerate_artifact(
         
         logger.info(f"Regenerating {artifact_type} version {new_version} using ArtifactGenerationService")
         
-        # 获取模板
+        # 创建 template_repo（服务可能需要查询模板）
         template_repo = PromptTemplateRepository(db)
-        template_record = template_repo.get_by_id(request.prompt_instance.template_id)
         
-        if not template_record:
-            raise HTTPException(status_code=404, detail=f"模板不存在: {request.prompt_instance.template_id}")
-        
-        # 转换为 PromptTemplate 模型
-        from src.core.models import PromptTemplate
-        template_model = PromptTemplate(
-            template_id=template_record.template_id,
-            title=template_record.title,
-            description=template_record.description,
-            prompt_body=template_record.prompt_body,
-            artifact_type=template_record.artifact_type,
-            supported_languages=json.loads(template_record.supported_languages),
-            parameter_schema=json.loads(template_record.parameter_schema),
-            is_system=template_record.is_system,
-        )
+        # 注意：不需要在这里查询模板
+        # 服务层会根据 prompt_instance 自动决定：
+        # 1. 如果有 prompt_text，使用它（用户修改过的内容）
+        # 2. 如果没有 prompt_text，从数据库查询模板
+        logger.info(f"Generating artifact with prompt_instance: template_id={request.prompt_instance.template_id}, has_prompt_text={bool(request.prompt_instance.prompt_text)}")
         
         # 初始化 ArtifactGenerationService
         artifact_service = ArtifactGenerationService(
@@ -324,7 +313,7 @@ async def regenerate_artifact(
             artifact_repo=artifact_repo,
         )
         
-        # 调用服务生成内容
+        # 调用服务生成内容（template=None，让服务自动处理）
         output_lang = OutputLanguage.ZH_CN if request.prompt_instance.language == "zh-CN" else OutputLanguage.EN_US
         generated_artifact = await artifact_service.generate_artifact(
             task_id=task.task_id,
@@ -333,8 +322,20 @@ async def regenerate_artifact(
             prompt_instance=prompt_instance,
             output_language=output_lang,
             user_id=task.user_id,
-            template=template_model,
+            template=None,  # 让服务层自动处理模板
+            meeting_date=task.meeting_date,  # 传递会议日期
+            meeting_time=task.meeting_time,  # 传递会议时间
         )
+        
+        # 如果用户提供了自定义名称，保存到数据库
+        display_name = None
+        if request.name and request.name.strip():
+            artifact_record = artifact_repo.get_by_id(generated_artifact.artifact_id)
+            if artifact_record:
+                artifact_record.display_name = request.name.strip()
+                display_name = request.name.strip()
+                db.commit()
+                logger.info(f"Saved display_name '{request.name}' for artifact {generated_artifact.artifact_id}")
         
         logger.info(f"Artifact {generated_artifact.artifact_id} regenerated successfully (version {generated_artifact.version})")
         
@@ -342,16 +343,41 @@ async def regenerate_artifact(
         task.last_content_modified_at = datetime.now()
         db.commit()
         
+        # 发送企微通知（异步，不阻塞响应）
+        asyncio.create_task(_send_success_notification(
+            task_id=task.task_id,
+            task_name=task.name,
+            meeting_date=task.meeting_date,
+            meeting_time=task.meeting_time,
+            artifact_id=generated_artifact.artifact_id,
+            artifact_type=artifact_type,
+            display_name=display_name,
+            user_id=task.user_id
+        ))
+        
         return GenerateArtifactResponse(
             success=True,
             artifact_id=generated_artifact.artifact_id,
             version=generated_artifact.version,
             content=generated_artifact.get_content_dict(),
+            display_name=display_name,
             message=f"衍生内容已重新生成 (版本 {generated_artifact.version})",
         )
         
     except Exception as e:
         logger.error(f"Failed to regenerate artifact with LLM: {e}", exc_info=True)
+        
+        # 发送企微失败通知（异步，不阻塞响应）
+        asyncio.create_task(_send_failure_notification(
+            task_id=task.task_id,
+            task_name=task.name,
+            meeting_date=task.meeting_date,
+            meeting_time=task.meeting_time,
+            error_code="ARTIFACT_REGENERATION_FAILED",
+            error_message=str(e),
+            user_id=task.user_id
+        ))
+        
         # 降级到占位符
         artifact_repo = ArtifactRepository(db)
         existing_artifacts = artifact_repo.get_by_task_and_type(task.task_id, artifact_type)
@@ -500,3 +526,155 @@ async def confirm_task(
         message="任务已确认并归档",
     )
 
+
+
+# ============================================================================
+# Helper Functions for WeCom Notifications
+# ============================================================================
+
+
+async def _send_success_notification(
+    task_id: str,
+    task_name: str,
+    meeting_date: str,
+    meeting_time: str,
+    artifact_id: str,
+    artifact_type: str,
+    display_name: str,
+    user_id: str
+):
+    """
+    异步发送成功通知
+    
+    Args:
+        task_id: 任务 ID
+        task_name: 任务名称
+        meeting_date: 会议日期
+        meeting_time: 会议时间
+        artifact_id: Artifact ID
+        artifact_type: Artifact 类型
+        display_name: 自定义显示名称
+        user_id: 用户 ID
+    """
+    try:
+        config = get_config()
+        
+        # 检查是否启用企微通知
+        if not config.wecom or not config.wecom.enabled:
+            logger.debug("WeCom notification disabled, skipping")
+            return
+        
+        if not config.frontend:
+            logger.warning("Frontend config not found, cannot send notification")
+            return
+        
+        # 创建新的数据库会话（异步任务需要独立的 Session）
+        from src.database.session import get_session
+        from src.database.repositories import UserRepository
+        
+        db = get_session()
+        try:
+            user_repo = UserRepository(db)
+            user = user_repo.get_by_id(user_id)
+            
+            if not user:
+                logger.warning(f"User not found: {user_id}, cannot send notification")
+                return
+            
+            # username 就是企微英文账号（如 lorenzolin）
+            user_account = user.username
+            
+            # 获取企微服务
+            wecom_service = get_wecom_service(
+                api_url=config.wecom.api_url,
+                frontend_base_url=config.frontend.base_url
+            )
+            
+            # 发送通知
+            wecom_service.send_artifact_success_notification(
+                user_account=user_account,
+                task_id=task_id,
+                task_name=task_name,
+                meeting_date=meeting_date,
+                meeting_time=meeting_time,
+                artifact_id=artifact_id,
+                artifact_type=artifact_type,
+                display_name=display_name
+            )
+        finally:
+            db.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to send WeCom success notification: {e}", exc_info=True)
+
+
+async def _send_failure_notification(
+    task_id: str,
+    task_name: str,
+    meeting_date: str,
+    meeting_time: str,
+    error_code: str,
+    error_message: str,
+    user_id: str
+):
+    """
+    异步发送失败通知
+    
+    Args:
+        task_id: 任务 ID
+        task_name: 任务名称
+        meeting_date: 会议日期
+        meeting_time: 会议时间
+        error_code: 错误码
+        error_message: 错误消息
+        user_id: 用户 ID
+    """
+    try:
+        config = get_config()
+        
+        # 检查是否启用企微通知
+        if not config.wecom or not config.wecom.enabled:
+            logger.debug("WeCom notification disabled, skipping")
+            return
+        
+        if not config.frontend:
+            logger.warning("Frontend config not found, cannot send notification")
+            return
+        
+        # 创建新的数据库会话（异步任务需要独立的 Session）
+        from src.database.session import get_session
+        from src.database.repositories import UserRepository
+        
+        db = get_session()
+        try:
+            user_repo = UserRepository(db)
+            user = user_repo.get_by_id(user_id)
+            
+            if not user:
+                logger.warning(f"User not found: {user_id}, cannot send notification")
+                return
+            
+            # username 就是企微英文账号（如 lorenzolin）
+            user_account = user.username
+            
+            # 获取企微服务
+            wecom_service = get_wecom_service(
+                api_url=config.wecom.api_url,
+                frontend_base_url=config.frontend.base_url
+            )
+            
+            # 发送通知
+            wecom_service.send_artifact_failure_notification(
+                user_account=user_account,
+                task_id=task_id,
+                task_name=task_name,
+                meeting_date=meeting_date,
+                meeting_time=meeting_time,
+                error_code=error_code,
+                error_message=error_message
+            )
+        finally:
+            db.close()
+        
+    except Exception as e:
+        logger.error(f"Failed to send WeCom failure notification: {e}", exc_info=True)

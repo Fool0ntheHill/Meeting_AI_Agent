@@ -51,6 +51,19 @@ class TaskWorker:
         self.current_task_id: Optional[str] = None
         self.shutdown_requested = False
         
+        # Redis 客户端（用于检查取消状态）
+        self.redis_client = None
+        try:
+            import redis
+            self.redis_client = redis.from_url(
+                "redis://localhost:6379/0",
+                decode_responses=True,
+            )
+            self.redis_client.ping()
+            logger.info("Redis client initialized for cancellation checks")
+        except Exception as e:
+            logger.warning(f"Redis client not available: {e}")
+        
         # 注册信号处理
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT, self._handle_shutdown)
@@ -165,6 +178,7 @@ class TaskWorker:
                     output_language=task_data.get("output_language", "zh-CN"),
                     skip_speaker_recognition=not task_data.get("enable_speaker_recognition", True),
                     hotword_set_id=task_data.get("hotword_set_id"),
+                    cancellation_check=self._is_task_cancelled,  # 传递取消检查回调
                 )
                 # 显式提交 session 以确保转写记录和 artifact 被保存
                 session.commit()
@@ -217,6 +231,31 @@ class TaskWorker:
             error_message: 错误信息
         """
         self._update_task_state(task_id, TaskState.FAILED, error_message)
+    
+    def _is_task_cancelled(self, task_id: str) -> bool:
+        """
+        检查任务是否被取消
+        
+        Args:
+            task_id: 任务 ID
+            
+        Returns:
+            bool: 任务是否被取消
+        """
+        if not self.redis_client:
+            return False
+        
+        try:
+            # 检查 Redis Set 中是否包含该任务 ID
+            is_cancelled = self.redis_client.sismember("cancelled_tasks", task_id)
+            if is_cancelled:
+                logger.info(f"Task {task_id} has been cancelled")
+                # 从集合中移除（避免重复检查）
+                self.redis_client.srem("cancelled_tasks", task_id)
+            return bool(is_cancelled)
+        except Exception as e:
+            logger.error(f"Failed to check cancellation status: {e}")
+            return False
     
     def stop(self):
         """

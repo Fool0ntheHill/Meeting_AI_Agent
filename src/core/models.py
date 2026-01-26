@@ -47,6 +47,7 @@ class TaskState(str, Enum):
     PARTIAL_SUCCESS = "partial_success"
     CONFIRMED = "confirmed"  # 已确认
     ARCHIVED = "archived"  # 已归档
+    CANCELLED = "cancelled"  # 已取消
 
 
 class StepState(str, Enum):

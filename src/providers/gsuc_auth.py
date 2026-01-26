@@ -2,13 +2,11 @@
 """GSUC OAuth2.0 authentication provider."""
 
 import base64
-import hashlib
 from typing import Dict, Optional
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode
 
 import httpx
 from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad
 
 from src.utils.logger import get_logger
 
@@ -96,36 +94,62 @@ class GSUCAuthProvider:
         
         加密方式: AES-256-CBC 加密 (code + appid + appsecret)
         
+        迁移自 Python 2 遗留代码，保持算法逻辑不变:
+        1. 开头加上 16 位随机数
+        2. 补齐文本长度为 32 的倍数
+        3. 使用 AES-256-CBC 加密 (key 的前 16 字节作为 IV)
+        
         Args:
             code: GSUC 返回的授权 code
             
         Returns:
             str: Base64 编码的加密结果
-            
-        Note:
-            实际加密算法可能需要根据 GSUC 团队提供的规范调整
         """
-        # 拼接字符串
+        import random
+        import string
+        
+        try:
+            # 解码 Base64 密钥
+            key = base64.b64decode(self.encryption_key)
+            if len(key) != 32:
+                logger.error(f"Invalid encryption key length: {len(key)}, expected 32")
+                raise ValueError("Encryption key must be 32 bytes after base64 decode")
+        except Exception as e:
+            logger.error(f"Failed to decode encryption key: {e}")
+            raise ValueError(f"Invalid encryption key: {e}")
+        
+        # 拼接字符串: code + appid + appsecret
         text = f"{code}{self.appid}{self.appsecret}"
         
-        # 确保密钥长度为 32 字节 (AES-256)
-        key = hashlib.sha256(self.encryption_key.encode('utf-8')).digest()
+        # 开头加上 16 位随机数 (Python 3: string.ascii_letters + string.digits)
+        random_prefix = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+        text_random = random_prefix + text
         
-        # 使用 AES-256-CBC 加密
-        cipher = AES.new(key, AES.MODE_CBC)
-        iv = cipher.iv
+        # 判断补齐文本长度为 32 的倍数
+        add_num = 32 - (len(text_random) % 32)
+        if add_num == 0:
+            add_num = 32
         
-        # 加密并填充
-        encrypted = cipher.encrypt(pad(text.encode('utf-8'), AES.block_size))
+        # 补齐 (Python 3: chr(add_num) * add_num)
+        text_all = text_random + chr(add_num) * add_num
         
-        # 拼接 IV 和加密数据
-        result = iv + encrypted
+        # 加密数据 (使用 key 的前 16 字节作为 IV)
+        iv = key[:16]
+        cipher = AES.new(key, AES.MODE_CBC, iv)
         
-        # Base64 编码
-        access_token = base64.b64encode(result).decode('utf-8')
-        
-        logger.debug(f"Generated access_token for code: {code[:10]}...")
-        return access_token
+        try:
+            # 加密
+            ciphertext = cipher.encrypt(text_all.encode('utf-8'))
+            
+            # Base64 编码
+            access_token = base64.b64encode(ciphertext).decode('utf-8')
+            
+            logger.debug(f"Generated access_token for code: {code[:10]}...")
+            return access_token
+            
+        except Exception as e:
+            logger.error(f"Encryption failed: {e}")
+            raise ValueError(f"Failed to encrypt access token: {e}")
     
     async def get_user_info(self, code: str) -> Dict:
         """

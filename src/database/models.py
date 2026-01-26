@@ -347,6 +347,9 @@ class GeneratedArtifactRecord(Base):
     # 内容类型和版本
     artifact_type = Column(String(64), nullable=False, index=True)
     version = Column(Integer, nullable=False, default=1)
+    
+    # 自定义显示名称（用户可以自定义 artifact 的名称）
+    display_name = Column(String(256), nullable=True)
 
     # 提示词实例 (JSON)
     prompt_instance = Column(Text, nullable=False)  # JSON: {"template_id": "...", "language": "...", "parameters": {...}}

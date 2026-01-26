@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Authentication endpoints."""
 
+import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -344,6 +345,7 @@ async def gsuc_callback(
             "user_id": user.user_id,
             "tenant_id": user.tenant_id,
             "username": user_info['username'],
+            "account": user_info['account'],
             "avatar": user_info.get('avatar', ''),
             "expires_in": str(config.jwt_expire_hours * 3600)
         }
@@ -392,4 +394,131 @@ async def refresh_token(
         status_code=501,
         detail="Token 刷新功能将在 Phase 2 实现"
     )
+
+
+# ============================================================================
+# Endpoints - GSUC Callback Compatibility (兼容路由)
+# ============================================================================
+
+
+@router.get("/callback")
+async def gsuc_callback_compat(
+    code: str = Query(..., description="GSUC 返回的授权 code"),
+    appid: str = Query(None, description="GSUC 返回的 appid"),
+    gsuc_auth_type: str = Query(None, description="认证类型"),
+    state: str = Query("", description="状态参数"),
+    db: Session = Depends(get_db)
+):
+    """
+    GSUC OAuth2.0 回调 - 兼容路由
+    
+    兼容 GSUC 直接回调到 /api/v1/auth/callback 的情况
+    
+    功能:
+    1. 接收 GSUC 返回的 code
+    2. 使用 code 获取用户信息
+    3. 查找或创建用户记录
+    4. 签发 JWT Token
+    5. 重定向到前端，携带 JWT
+    
+    Args:
+        code: GSUC 返回的授权 code
+        appid: GSUC 返回的 appid (可选)
+        gsuc_auth_type: 认证类型 (可选)
+        state: 状态参数 (可选)
+        db: 数据库会话
+        
+    Returns:
+        RedirectResponse: 重定向到前端
+        
+    Raises:
+        HTTPException: 401 如果认证失败
+        HTTPException: 403 如果 GSUC 未启用
+    """
+    config = get_config()
+    
+    # 检查 GSUC 是否启用
+    if not config.gsuc or not config.gsuc.enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="GSUC 认证未启用"
+        )
+    
+    logger.info(f"GSUC callback (compat): code={code[:20]}..., appid={appid}, auth_type={gsuc_auth_type}")
+    
+    # 创建 GSUC 认证提供商
+    provider = GSUCAuthProvider(
+        appid=config.gsuc.appid,
+        appsecret=config.gsuc.appsecret,
+        encryption_key=config.gsuc.encryption_key,
+        login_url=config.gsuc.login_url,
+        userinfo_url=config.gsuc.userinfo_url,
+        timeout=config.gsuc.timeout
+    )
+    
+    try:
+        # 获取用户信息
+        user_info = await provider.verify_and_get_user(code)
+        
+        logger.info(f"GSUC user info: uid={user_info['uid']}, account={user_info['account']}")
+        
+        # 查找或创建用户
+        user_repo = UserRepository(db)
+        user_id = f"user_gsuc_{user_info['uid']}"
+        tenant_id = f"tenant_gsuc_{user_info['uid']}"
+        
+        user = user_repo.get_by_id(user_id)
+        
+        if not user:
+            user = user_repo.create(
+                user_id=user_id,
+                username=user_info['account'],
+                tenant_id=tenant_id,
+                is_active=True
+            )
+            logger.info(f"Created new GSUC user: {user_id}")
+        else:
+            logger.info(f"GSUC user login: {user_id}")
+        
+        # 签发 JWT Token
+        expires_delta = timedelta(hours=config.jwt_expire_hours)
+        access_token = create_access_token(
+            user_id=user.user_id,
+            tenant_id=user.tenant_id,
+            expires_delta=expires_delta
+        )
+        
+        # 重定向到前端
+        from fastapi.responses import RedirectResponse
+        from urllib.parse import urlencode
+        
+        # 前端地址 (可以从环境变量或配置读取)
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/login")
+        
+        params = {
+            "access_token": access_token,
+            "user_id": user.user_id,
+            "tenant_id": user.tenant_id,
+            "username": user_info['username'],
+            "account": user_info['account'],
+            "avatar": user_info.get('avatar', ''),
+            "expires_in": str(config.jwt_expire_hours * 3600)
+        }
+        
+        redirect_url = f"{frontend_url}?{urlencode(params)}"
+        
+        logger.info(f"Redirecting to frontend: {frontend_url}")
+        return RedirectResponse(url=redirect_url)
+        
+    except GSUCAuthError as e:
+        logger.error(f"GSUC auth failed: {e.message}")
+        # 重定向到前端错误页面
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/login")
+        error_url = f"{frontend_url}?error=auth_failed&message={e.message}"
+        return RedirectResponse(url=error_url)
+    except Exception as e:
+        logger.error(f"GSUC callback error: {e}")
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/login")
+        error_url = f"{frontend_url}?error=server_error"
+        return RedirectResponse(url=error_url)
 

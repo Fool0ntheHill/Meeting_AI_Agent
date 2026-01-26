@@ -221,6 +221,21 @@ class PricingConfig(BaseModel):
         return v
 
 
+class WeComConfig(BaseModel):
+    """企业微信通知配置"""
+    
+    enabled: bool = Field(default=False, description="是否启用企微通知")
+    api_url: str = Field(default="http://gsmsg.gs.com:24905", description="企微消息 API 地址")
+
+
+class FrontendConfig(BaseModel):
+    """前端配置"""
+    
+    base_url: str = Field(..., description="前端基础 URL")
+    workspace_path: str = Field(default="/workspace", description="Workspace 路径")
+    workbench_path: str = Field(default="/workbench", description="Workbench 路径")
+
+
 class AppConfig(BaseModel):
     """应用配置"""
 
@@ -243,6 +258,8 @@ class AppConfig(BaseModel):
     iflytek: IFlyTekConfig
     gemini: GeminiConfig
     gsuc: Optional[GSUCConfig] = Field(None, description="GSUC OAuth2.0 配置 (可选)")
+    wecom: Optional[WeComConfig] = Field(None, description="企业微信通知配置 (可选)")
+    frontend: Optional[FrontendConfig] = Field(None, description="前端配置 (可选)")
     log: LogConfig = Field(default_factory=LogConfig)
     queue: QueueConfig = Field(default_factory=QueueConfig)
     storage: StorageConfig

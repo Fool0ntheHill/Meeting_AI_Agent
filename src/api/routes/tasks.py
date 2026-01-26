@@ -575,6 +575,90 @@ async def delete_task(
     logger.info(f"Task deleted: {task.task_id} by user {task.user_id}")
 
 
+@router.post("/{task_id}/cancel", status_code=200)
+async def cancel_task(
+    task_id: str,
+    task: Task = Depends(verify_task_ownership),
+    db: Session = Depends(get_db),
+    redis_client: Optional[redis.Redis] = Depends(get_redis_client),
+):
+    """
+    取消正在执行的任务
+    
+    只能取消处于以下状态的任务：
+    - queued: 队列中等待
+    - running: 正在执行
+    - transcribing: 转写中
+    - identifying: 识别中
+    - correcting: 校正中
+    - summarizing: 总结中
+    
+    Args:
+        task_id: 任务 ID
+        task: 任务对象 (已验证所有权)
+        db: 数据库会话
+        redis_client: Redis 客户端
+        
+    Returns:
+        dict: 取消结果
+        
+    Raises:
+        HTTPException: 任务状态不允许取消
+    """
+    # 检查任务状态
+    cancellable_states = [
+        TaskState.QUEUED,
+        TaskState.RUNNING,
+        TaskState.TRANSCRIBING,
+        TaskState.IDENTIFYING,
+        TaskState.CORRECTING,
+        TaskState.SUMMARIZING,
+    ]
+    
+    if task.state not in cancellable_states:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task in state '{task.state}' cannot be cancelled"
+        )
+    
+    # 在 Redis 中标记任务为取消状态
+    if redis_client:
+        try:
+            # 使用 Redis Set 存储取消的任务 ID
+            redis_client.sadd("cancelled_tasks", task_id)
+            # 设置过期时间（24小时后自动清理）
+            redis_client.expire("cancelled_tasks", 86400)
+            logger.info(f"Task {task_id} marked as cancelled in Redis")
+        except Exception as e:
+            logger.error(f"Failed to mark task as cancelled in Redis: {e}")
+            # 即使 Redis 失败，也继续更新数据库
+    
+    # 更新数据库状态
+    task_repo = TaskRepository(db)
+    task_repo.update_state(
+        task_id=task_id,
+        state=TaskState.CANCELLED,
+        progress=task.progress or 0.0,
+        error_message="Task cancelled by user"
+    )
+    
+    # 清除缓存
+    if redis_client:
+        try:
+            redis_client.delete(f"task_status:{task_id}")
+        except Exception as e:
+            logger.error(f"Failed to clear cache: {e}")
+    
+    logger.info(f"Task cancelled: {task_id} by user {task.user_id}")
+    
+    return {
+        "success": True,
+        "message": "Task cancelled successfully",
+        "task_id": task_id,
+        "previous_state": task.state,
+    }
+
+
 @router.post("/estimate", response_model=EstimateCostResponse)
 async def estimate_cost(
     request: EstimateCostRequest,

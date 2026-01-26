@@ -2,6 +2,7 @@
 
 import json
 import logging
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -101,22 +102,33 @@ class ArtifactGenerationService:
                 logger.info(f"Dict keys: {list(prompt_instance.keys())}")
                 logger.info(f"Has prompt_text: {'prompt_text' in prompt_instance}")
                 if 'prompt_text' in prompt_instance:
-                    logger.info(f"prompt_text length: {len(prompt_instance['prompt_text'])} chars")
-                    logger.info(f"prompt_text preview: {prompt_instance['prompt_text'][:200]}")
+                    pt = prompt_instance['prompt_text']
+                    logger.info(f"prompt_text type: {type(pt)}, length: {len(pt) if pt else 0} chars")
+                    logger.info(f"prompt_text is None: {pt is None}, is empty string: {pt == ''}")
+                    if pt:
+                        logger.info(f"prompt_text preview: {pt[:200]}")
+                    else:
+                        logger.warning(f"prompt_text is falsy: repr={repr(pt)}")
                 prompt_instance = PromptInstance(**prompt_instance)
                 logger.info(f"Converted to PromptInstance object, prompt_text: {prompt_instance.prompt_text[:200] if prompt_instance.prompt_text else 'None'}")
             
             # 2. 获取模板
             if template is None:
-                # 特殊处理：__blank__ 表示使用临时空白模板（只使用 custom_instructions）
-                if prompt_instance.template_id == "__blank__":
-                    logger.info("Using temporary blank template with custom instructions")
+                # 优先使用 prompt_text（用户可能修改了模板）
+                # 注意：检查 prompt_text 是否存在且不为空字符串
+                if prompt_instance.prompt_text and prompt_instance.prompt_text.strip():
+                    logger.info(f"Using prompt_text from prompt_instance (template_id: {prompt_instance.template_id})")
+                    template = self._create_blank_template(artifact_type, prompt_instance)
+                # 如果模板是 __blank__ 但没有 prompt_text，也创建空白模板
+                elif prompt_instance.template_id == "__blank__":
+                    logger.info(f"Template is __blank__, creating blank template even without prompt_text")
                     template = self._create_blank_template(artifact_type, prompt_instance)
                 # 如果没有提供 template 且没有配置 template_repo，使用默认模板
                 elif self.templates is None:
                     logger.warning("Template repository not configured, using default template")
                     template = self._get_default_template(artifact_type, prompt_instance.language)
                 else:
+                    # 从数据库查询模板
                     template = self.templates.get_by_id(prompt_instance.template_id)
                     if not template:
                         raise ValidationError(f"模板不存在: {prompt_instance.template_id}")
@@ -131,20 +143,23 @@ class ArtifactGenerationService:
             # 4. 获取下一个版本号
             next_version = await self._get_next_version(task_id, artifact_type)
             
-            # 5. 调用 LLM 生成内容
+            # 5. 生成唯一的 artifact_id（使用 UUID 避免冲突）
+            artifact_id = f"artifact_{uuid.uuid4().hex[:16]}"
+            
+            # 6. 调用 LLM 生成内容
             artifact = await self.llm.generate_artifact(
                 transcript=transcript,
                 prompt_instance=prompt_instance,
                 output_language=output_language,
                 template=template,
                 task_id=task_id,
-                artifact_id=f"art_{task_id}_{artifact_type}_v{next_version}",
+                artifact_id=artifact_id,
                 version=next_version,
                 created_by=user_id,
                 **kwargs,
             )
             
-            # 6. 保存到数据库(如果有 repo)
+            # 7. 保存到数据库(如果有 repo)
             if self.artifacts is not None:
                 # Convert GeneratedArtifact to repository parameters
                 self.artifacts.create(

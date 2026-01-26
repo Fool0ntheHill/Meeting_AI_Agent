@@ -211,6 +211,7 @@ class GenerateArtifactRequest(BaseModel):
     """生成衍生内容请求"""
 
     prompt_instance: PromptInstance = Field(..., description="提示词实例")
+    name: Optional[str] = Field(None, description="自定义显示名称")
 
     model_config = {
         "json_schema_extra": {
@@ -219,7 +220,8 @@ class GenerateArtifactRequest(BaseModel):
                     "template_id": "tpl_001",
                     "language": "zh-CN",
                     "parameters": {"meeting_description": "产品规划会议"},
-                }
+                },
+                "name": "产品规划会议纪要"
             }
         }
     }
@@ -232,6 +234,7 @@ class GenerateArtifactResponse(BaseModel):
     artifact_id: str
     version: int
     content: Dict
+    display_name: Optional[str] = Field(None, description="自定义显示名称")
     message: str = "内容已生成"
 
 
@@ -251,6 +254,7 @@ class ArtifactInfo(BaseModel):
     artifact_type: str
     version: int
     prompt_instance: PromptInstance
+    display_name: Optional[str] = Field(None, description="自定义显示名称")
     created_at: datetime
     created_by: str
 
