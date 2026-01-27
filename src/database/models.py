@@ -350,11 +350,15 @@ class GeneratedArtifactRecord(Base):
     
     # 自定义显示名称（用户可以自定义 artifact 的名称）
     display_name = Column(String(256), nullable=True)
+    
+    # 生成状态：processing（生成中）、success（成功）、failed（失败）
+    state = Column(String(32), nullable=False, default="success", index=True)
 
     # 提示词实例 (JSON)
     prompt_instance = Column(Text, nullable=False)  # JSON: {"template_id": "...", "language": "...", "parameters": {...}}
 
     # 生成内容 (JSON 字符串)
+    # 注意：如果 state = failed，content 可能包含错误信息
     content = Column(Text, nullable=False)
 
     # 元数据 (JSON)

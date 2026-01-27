@@ -110,7 +110,7 @@ class GeminiLLM(LLMProvider):
             transcript: 转写结果
             prompt_instance: 提示词实例
             output_language: 输出语言
-            **kwargs: 其他参数(task_id, created_by, version)
+            **kwargs: 其他参数(task_id, created_by, version, speaker_mapping, meeting_date, meeting_time)
 
         Returns:
             GeneratedArtifact: 生成的衍生内容
@@ -126,7 +126,7 @@ class GeminiLLM(LLMProvider):
             if not template:
                 raise LLMError("Template not provided", provider="gemini")
 
-            # 2. 格式化转写文本
+            # 2. 格式化转写文本（segments 中已经包含真实姓名）
             formatted_transcript = self.format_transcript(transcript)
 
             # 3. 构建完整提示词
@@ -144,16 +144,16 @@ class GeminiLLM(LLMProvider):
             logger.info(f"{prompt[:500]}")
             logger.info(f"=== PROMPT LENGTH: {len(prompt)} chars ===")
 
-            # 4. 构建 JSON Schema（如果模板提供了）
+            # 5. 构建 JSON Schema（如果模板提供了）
             response_schema = self._build_response_schema(template)
 
-            # 5. 调用 Gemini API
+            # 6. 调用 Gemini API
             response_text, usage_metadata = await self._call_gemini_api(prompt, response_schema)
 
-            # 5. 解析响应
+            # 7. 解析响应
             content_dict = self._parse_response(response_text, template.artifact_type)
 
-            # 6. 构建 metadata (包含 token 使用信息和提示词信息)
+            # 8. 构建 metadata (包含 token 使用信息和提示词信息)
             metadata = kwargs.get("metadata", {}) or {}
             metadata.update({
                 "llm_model": self.config.model,
@@ -184,7 +184,7 @@ class GeminiLLM(LLMProvider):
             
             metadata["prompt"] = prompt_metadata
 
-            # 7. 构建 GeneratedArtifact
+            # 9. 构建 GeneratedArtifact
             artifact = GeneratedArtifact(
                 artifact_id=kwargs.get("artifact_id", f"art_{datetime.now().timestamp()}"),
                 task_id=kwargs.get("task_id", ""),
@@ -275,13 +275,6 @@ class GeminiLLM(LLMProvider):
             # 常规模板：按原有逻辑处理
             prompt_body = user_prompt
             
-            # 添加会议元数据（如果有，且不是空白模板）
-            if (meeting_date or meeting_time) and not is_blank_template:
-                from src.utils.meeting_metadata import format_meeting_datetime
-                datetime_str = format_meeting_datetime(meeting_date, meeting_time)
-                if datetime_str:
-                    prompt_body += f"\n\n## 会议时间\n{datetime_str}"
-
             # 替换或追加转写文本
             if has_transcript_placeholder:
                 prompt_body = prompt_body.replace("{transcript}", formatted_transcript)
@@ -291,12 +284,21 @@ class GeminiLLM(LLMProvider):
                     prompt_body += f"\n\n{formatted_transcript}"
                 else:
                     prompt_body += f"\n\n## 会议转写\n{formatted_transcript}"
-
+            
             # 添加输出语言指令
             # 注意：如果用户使用了自定义 prompt_text（空白模板），则不添加语言指令
             if not (prompt_instance.prompt_text and is_blank_template):
                 language_instruction = self._get_language_instruction(output_language)
                 prompt_body += f"\n\n{language_instruction}"
+        
+        # 【重要】添加会议元数据 - 无论什么模板都要添加，放在最后（语言指令之后）
+        if meeting_date or meeting_time:
+            from src.utils.meeting_metadata import format_meeting_datetime
+            datetime_str = format_meeting_datetime(meeting_date, meeting_time)
+            if datetime_str:
+                # 在所有内容之后添加会议时间
+                prompt_body += f"\n\n## 会议时间\n{datetime_str}"
+                logger.info(f"Added meeting datetime to prompt: {datetime_str}")
 
         return prompt_body
 

@@ -413,26 +413,18 @@ async def get_transcript(
         full_text = " ".join(seg.text for seg in segments)
     
     # 获取 speaker mapping（声纹 ID -> 真实姓名）
-    from src.database.repositories import SpeakerMappingRepository, SpeakerRepository
+    from src.database.repositories import SpeakerMappingRepository
     
     speaker_mapping_repo = SpeakerMappingRepository(db)
-    speaker_repo = SpeakerRepository(db)
     
-    # 获取任务的 speaker mappings（Speaker 1 -> speaker_linyudong）
+    # 获取任务的 speaker mappings（Speaker 1 -> 林煜东）
     task_mappings = speaker_mapping_repo.get_by_task_id(task.task_id)
     
     # 构建最终的 speaker_mapping（Speaker 1 -> 林煜东）
+    # 直接使用 SpeakerMapping.speaker_name，这是用户修正后的名字
     speaker_mapping = {}
     for mapping in task_mappings:
-        # mapping.speaker_label: "Speaker 1"
-        # mapping.speaker_id: "speaker_linyudong"
-        # 查询真实姓名
-        display_name = speaker_repo.get_display_name(mapping.speaker_id)
-        if display_name:
-            speaker_mapping[mapping.speaker_label] = display_name
-        else:
-            # 如果没有找到真实姓名，使用 speaker_id
-            speaker_mapping[mapping.speaker_label] = mapping.speaker_id
+        speaker_mapping[mapping.speaker_label] = mapping.speaker_name
     
     return TranscriptResponse(
         task_id=task.task_id,
@@ -639,7 +631,7 @@ async def cancel_task(
         task_id=task_id,
         state=TaskState.CANCELLED,
         progress=task.progress or 0.0,
-        error_message="Task cancelled by user"
+        error_details="Task cancelled by user"
     )
     
     # 清除缓存

@@ -175,8 +175,21 @@ class GSUCAuthProvider:
             GSUCAuthError: 认证失败
             httpx.HTTPError: 网络请求失败
         """
+        # 调试日志：加密密钥信息
+        try:
+            key = base64.b64decode(self.encryption_key)
+            logger.debug(f"Encryption key length: {len(key)} bytes (expected 32)")
+        except Exception as e:
+            logger.error(f"Failed to decode encryption key: {e}")
+            raise GSUCAuthError(f"加密密钥配置错误: {e}")
+        
         # 生成 access_token
-        access_token = self._encrypt_access_token(code)
+        try:
+            access_token = self._encrypt_access_token(code)
+            logger.debug(f"Generated access_token: {access_token[:50]}...")
+        except Exception as e:
+            logger.error(f"Failed to generate access_token: {e}")
+            raise GSUCAuthError(f"生成 access_token 失败: {e}")
         
         # 构建请求参数
         params = {
@@ -188,10 +201,25 @@ class GSUCAuthProvider:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 logger.info(f"Requesting GSUC user info: code={code[:10]}...")
+                logger.debug(f"Request URL: {self.userinfo_url}")
+                logger.debug(f"Request params: code={code[:20]}..., access_token={access_token[:50]}...")
+                
                 response = await client.get(self.userinfo_url, params=params)
+                
+                # 调试日志：响应状态
+                logger.debug(f"GSUC response status: {response.status_code}")
+                logger.debug(f"GSUC response headers: {dict(response.headers)}")
+                
+                # 如果是 500 错误，记录响应体
+                if response.status_code == 500:
+                    logger.error(f"GSUC returned 500 error")
+                    logger.error(f"Response body: {response.text[:500]}")
+                    raise GSUCAuthError(f"GSUC 服务器错误 (500)，可能是加密密钥不匹配或 code 已失效")
+                
                 response.raise_for_status()
                 
                 data = response.json()
+                logger.debug(f"GSUC response data: {data}")
                 
                 # 检查返回码
                 if data.get("rc") != 0:
@@ -204,6 +232,8 @@ class GSUCAuthProvider:
                 
             except httpx.HTTPError as e:
                 logger.error(f"GSUC API request failed: {e}")
+                logger.error(f"Request URL: {self.userinfo_url}")
+                logger.error(f"Request params: code={code[:20]}...")
                 raise
     
     async def verify_and_get_user(self, code: str) -> Dict:

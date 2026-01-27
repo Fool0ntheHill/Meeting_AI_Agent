@@ -446,6 +446,10 @@ async def gsuc_callback_compat(
     
     logger.info(f"GSUC callback (compat): code={code[:20]}..., appid={appid}, auth_type={gsuc_auth_type}")
     
+    # Import at function start to ensure except blocks can use them
+    from fastapi.responses import RedirectResponse
+    from urllib.parse import urlencode
+    
     # 创建 GSUC 认证提供商
     provider = GSUCAuthProvider(
         appid=config.gsuc.appid,
@@ -489,9 +493,6 @@ async def gsuc_callback_compat(
         )
         
         # 重定向到前端
-        from fastapi.responses import RedirectResponse
-        from urllib.parse import urlencode
-        
         # 前端地址 (可以从环境变量或配置读取)
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/login")
         
@@ -512,13 +513,16 @@ async def gsuc_callback_compat(
         
     except GSUCAuthError as e:
         logger.error(f"GSUC auth failed: {e.message}")
-        # 重定向到前端错误页面
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/login")
-        error_url = f"{frontend_url}?error=auth_failed&message={e.message}"
-        return RedirectResponse(url=error_url)
+        # 自动兜底：重定向到登录页，触发重新登录
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        retry_url = f"{frontend_url}/login?gsuc_retry=1&reason=auth_failed"
+        logger.info(f"Auto-retry: redirecting to {retry_url}")
+        return RedirectResponse(url=retry_url, status_code=302)
     except Exception as e:
         logger.error(f"GSUC callback error: {e}")
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/login")
-        error_url = f"{frontend_url}?error=server_error"
-        return RedirectResponse(url=error_url)
+        # 自动兜底：重定向到登录页，触发重新登录
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        retry_url = f"{frontend_url}/login?gsuc_retry=1&reason=server_error"
+        logger.info(f"Auto-retry: redirecting to {retry_url}")
+        return RedirectResponse(url=retry_url, status_code=302)
 

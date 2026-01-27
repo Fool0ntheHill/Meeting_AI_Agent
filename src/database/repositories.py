@@ -560,6 +560,8 @@ class ArtifactRepository:
         content: Dict,  # 内容字典
         created_by: str,
         metadata: Optional[Dict] = None,
+        display_name: Optional[str] = None,  # 新增：显示名称
+        state: str = "success",  # 新增：状态字段，默认为 success（向后兼容）
     ) -> GeneratedArtifactRecord:
         """创建生成内容记录"""
         record = GeneratedArtifactRecord(
@@ -571,10 +573,12 @@ class ArtifactRepository:
             content=json.dumps(content, ensure_ascii=False),
             artifact_metadata=json.dumps(metadata, ensure_ascii=False) if metadata else None,
             created_by=created_by,
+            display_name=display_name,  # 新增：设置显示名称
+            state=state,  # 新增：设置状态
         )
         self.session.add(record)
         self.session.flush()
-        logger.info(f"Artifact created: {artifact_id} for task {task_id}")
+        logger.info(f"Artifact created: {artifact_id} for task {task_id} with state={state}, display_name={display_name}")
         return record
 
     def get_by_id(self, artifact_id: str) -> Optional[GeneratedArtifactRecord]:
@@ -632,6 +636,162 @@ class ArtifactRepository:
             .all()
         )
 
+    def get_by_task_and_name(
+        self,
+        task_id: str,
+        display_name: str,
+    ) -> List[GeneratedArtifactRecord]:
+        """获取任务指定名称的所有版本（用于版本号计算）"""
+        return (
+            self.session.query(GeneratedArtifactRecord)
+            .filter(
+                GeneratedArtifactRecord.task_id == task_id,
+                GeneratedArtifactRecord.display_name == display_name,
+            )
+            .order_by(desc(GeneratedArtifactRecord.version))
+            .all()
+        )
+
+    def create_placeholder(
+        self,
+        artifact_id: str,
+        task_id: str,
+        artifact_type: str,
+        version: int,
+        prompt_instance: Dict,
+        created_by: str,
+        display_name: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+    ) -> GeneratedArtifactRecord:
+        """
+        创建占位 artifact（state=processing）
+        
+        用于异步生成场景：先创建占位记录，立即返回 artifact_id，
+        然后异步执行实际生成，完成后更新 content 和 state。
+        
+        Args:
+            artifact_id: Artifact ID
+            task_id: 任务 ID
+            artifact_type: Artifact 类型
+            version: 版本号
+            prompt_instance: 提示词实例（字典）
+            created_by: 创建者 ID
+            display_name: 显示名称（可选）
+            metadata: 元数据（可选）
+            
+        Returns:
+            GeneratedArtifactRecord: 占位 artifact 记录
+        """
+        # 占位内容
+        placeholder_content = {
+            "status": "generating",
+            "message": "内容生成中，请稍候..."
+        }
+        
+        record = GeneratedArtifactRecord(
+            artifact_id=artifact_id,
+            task_id=task_id,
+            artifact_type=artifact_type,
+            version=version,
+            prompt_instance=json.dumps(prompt_instance, ensure_ascii=False),
+            content=json.dumps(placeholder_content, ensure_ascii=False),
+            artifact_metadata=json.dumps(metadata, ensure_ascii=False) if metadata else None,
+            created_by=created_by,
+            display_name=display_name,
+            state="processing",  # 占位状态
+        )
+        self.session.add(record)
+        self.session.flush()
+        logger.info(f"Placeholder artifact created: {artifact_id} for task {task_id} (state=processing)")
+        return record
+    
+    def update_content_and_state(
+        self,
+        artifact_id: str,
+        content: Dict,
+        state: str,
+    ) -> Optional[GeneratedArtifactRecord]:
+        """
+        更新 artifact 的内容和状态
+        
+        用于异步生成完成后更新占位 artifact。
+        
+        注意：失败时，错误信息应该直接放在 content 中，格式：
+        {
+            "error_code": "LLM_TIMEOUT",
+            "error_message": "LLM 生成超时",
+            "hint": "可在 Workspace 首版纪要查看已有内容"
+        }
+        
+        Args:
+            artifact_id: Artifact ID
+            content: 新内容（字典）- 失败时包含错误信息
+            state: 新状态（success/failed）
+            
+        Returns:
+            GeneratedArtifactRecord: 更新后的 artifact，如果不存在返回 None
+        """
+        artifact = self.get_by_id(artifact_id)
+        if not artifact:
+            logger.warning(f"Artifact not found for update: {artifact_id}")
+            return None
+        
+        # 更新内容（失败时 content 直接包含错误信息）
+        artifact.content = json.dumps(content, ensure_ascii=False)
+        
+        # 更新状态
+        artifact.state = state
+        
+        self.session.flush()
+        logger.info(f"Artifact updated: {artifact_id} (state={state})")
+        return artifact
+    
+    def get_status(self, artifact_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取 artifact 状态信息
+        
+        返回轻量级的状态信息，用于前端轮询。
+        
+        失败时从 content 中提取错误信息（统一位置）。
+        
+        Args:
+            artifact_id: Artifact ID
+            
+        Returns:
+            Dict: 状态信息 {"state": "processing|success|failed", "error": {...}}
+            如果 artifact 不存在返回 None
+        """
+        artifact = self.get_by_id(artifact_id)
+        if not artifact:
+            return None
+        
+        status = {
+            "artifact_id": artifact_id,
+            "state": artifact.state,
+            "created_at": artifact.created_at.isoformat(),
+        }
+        
+        # 如果失败，从 content 中提取错误信息（统一位置）
+        if artifact.state == "failed":
+            try:
+                content = artifact.get_content_dict()
+                if "error_code" in content or "error_message" in content:
+                    status["error"] = {
+                        "code": content.get("error_code", "UNKNOWN_ERROR"),
+                        "message": content.get("error_message", "生成失败"),
+                    }
+                    # 可选的 hint 字段
+                    if "hint" in content:
+                        status["error"]["hint"] = content["hint"]
+            except Exception as e:
+                logger.warning(f"Failed to extract error from content: {e}")
+                status["error"] = {
+                    "code": "UNKNOWN_ERROR",
+                    "message": "生成失败"
+                }
+        
+        return status
+    
     def delete(self, artifact_id: str) -> bool:
         """
         删除生成内容

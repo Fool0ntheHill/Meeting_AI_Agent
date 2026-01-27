@@ -12,7 +12,7 @@
 - POST /api/v1/tasks/{task_id}/artifacts/{type}/generate - 生成新版本
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
@@ -62,6 +62,7 @@ def _record_to_artifact_info(record) -> ArtifactInfo:
         version=record.version,
         prompt_instance=PromptInstance(**record.get_prompt_instance_dict()),
         display_name=record.display_name,  # 添加 display_name
+        state=record.state if hasattr(record, 'state') and record.state else "success",  # 添加 state，向后兼容
         created_at=record.created_at,
         created_by=record.created_by,
     )
@@ -76,6 +77,181 @@ def _group_artifacts_by_type(artifacts: List) -> Dict[str, List[ArtifactInfo]]:
             grouped[artifact_type] = []
         grouped[artifact_type].append(_record_to_artifact_info(artifact))
     return grouped
+
+
+# ============================================================================
+# Async Generation Background Task
+# ============================================================================
+
+
+async def _generate_artifact_async(
+    artifact_id: str,
+    task_id: str,
+    artifact_type: str,
+    prompt_instance: PromptInstance,
+    display_name: str,
+    user_id: str,
+    meeting_date: Optional[str],
+    meeting_time: Optional[str],
+    task_name: str,
+):
+    """
+    异步生成 artifact 内容
+    
+    在后台执行实际的 LLM 生成，完成后更新 artifact 的 content 和 state。
+    
+    Args:
+        artifact_id: Artifact ID
+        task_id: 任务 ID
+        artifact_type: Artifact 类型
+        prompt_instance: 提示词实例
+        display_name: 显示名称
+        user_id: 用户 ID
+        meeting_date: 会议日期
+        meeting_time: 会议时间
+        task_name: 任务名称
+    """
+    from src.database.session import get_session
+    from src.database.repositories import (
+        ArtifactRepository,
+        TranscriptRepository,
+        SpeakerMappingRepository,
+        PromptTemplateRepository,
+        TaskRepository,
+    )
+    from src.services.artifact_generation import ArtifactGenerationService
+    from src.services.correction import CorrectionService
+    from src.core.models import OutputLanguage
+    from src.config.loader import get_config
+    from src.utils.error_handler import classify_exception
+    
+    logger.info(f"Starting async generation for artifact {artifact_id}")
+    
+    # 创建独立的数据库会话
+    db = get_session()
+    
+    try:
+        # 获取转写结果
+        transcript_repo = TranscriptRepository(db)
+        transcript = transcript_repo.get_by_task_id(task_id)
+        
+        if not transcript:
+            raise Exception("转写记录不存在")
+        
+        # 转换转写记录为 TranscriptionResult
+        transcript_result = transcript_repo.to_transcription_result(transcript)
+        
+        # 获取说话人映射并应用到转写结果
+        speaker_mapping_repo = SpeakerMappingRepository(db)
+        speaker_mapping = speaker_mapping_repo.get_mapping_dict(task_id)
+        logger.info(f"Retrieved speaker mapping for task {task_id}: {speaker_mapping}")
+        
+        # 应用说话人映射
+        if speaker_mapping:
+            correction_service = CorrectionService()
+            transcript_result = await correction_service.correct_speakers(transcript_result, speaker_mapping)
+            logger.info(f"Applied speaker mapping to transcript")
+        
+        # 创建 LLM provider
+        config = get_config()
+        from src.providers.gemini_llm import GeminiLLM
+        llm_provider = GeminiLLM(config.gemini)
+        
+        # 创建 ArtifactGenerationService
+        template_repo = PromptTemplateRepository(db)
+        artifact_repo = ArtifactRepository(db)
+        
+        artifact_service = ArtifactGenerationService(
+            llm_provider=llm_provider,
+            template_repo=template_repo,
+            artifact_repo=artifact_repo,
+        )
+        
+        # 调用服务生成内容
+        output_lang = OutputLanguage.ZH_CN if prompt_instance.language == "zh-CN" else OutputLanguage.EN_US
+        generated_artifact = await artifact_service.generate_artifact(
+            task_id=task_id,
+            transcript=transcript_result,
+            artifact_type=artifact_type,
+            prompt_instance=prompt_instance,
+            output_language=output_lang,
+            user_id=user_id,
+            template=None,
+            meeting_date=meeting_date,
+            meeting_time=meeting_time,
+            artifact_id=artifact_id,  # 使用已创建的 artifact_id
+        )
+        
+        # 更新占位 artifact 的内容和状态
+        artifact_repo.update_content_and_state(
+            artifact_id=artifact_id,
+            content=generated_artifact.get_content_dict(),
+            state="success",
+        )
+        
+        # 更新 display_name
+        artifact_record = artifact_repo.get_by_id(artifact_id)
+        if artifact_record:
+            artifact_record.display_name = display_name
+        
+        # 更新任务的内容最后修改时间
+        task_repo = TaskRepository(db)
+        task = task_repo.get_by_id(task_id)
+        if task:
+            task.last_content_modified_at = datetime.now()
+        
+        db.commit()
+        
+        logger.info(f"Artifact {artifact_id} generated successfully (async)")
+        
+        # 发送成功通知
+        await _send_success_notification(
+            task_id=task_id,
+            task_name=task_name,
+            meeting_date=meeting_date,
+            meeting_time=meeting_time,
+            artifact_id=artifact_id,
+            artifact_type=artifact_type,
+            display_name=display_name,
+            user_id=user_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to generate artifact {artifact_id} (async): {e}", exc_info=True)
+        
+        # 分类错误
+        error_info = classify_exception(e)
+        
+        # 更新 artifact 为失败状态（错误信息直接放在 content 中）
+        artifact_repo = ArtifactRepository(db)
+        
+        error_content = {
+            "error_code": error_info.error_code,
+            "error_message": error_info.error_message,  # 修正：使用 error_message 而不是 user_message
+            "hint": "可在 Workspace 首版纪要查看已有内容"
+        }
+        
+        artifact_repo.update_content_and_state(
+            artifact_id=artifact_id,
+            content=error_content,
+            state="failed",
+        )
+        
+        db.commit()
+        
+        # 发送失败通知
+        await _send_failure_notification(
+            task_id=task_id,
+            task_name=task_name,
+            meeting_date=meeting_date,
+            meeting_time=meeting_time,
+            error_code=error_info.error_code,
+            error_message=error_info.error_message,  # 修正：使用 error_message 而不是 user_message
+            user_id=user_id
+        )
+        
+    finally:
+        db.close()
 
 
 # ============================================================================
@@ -305,6 +481,60 @@ async def get_artifact_by_id(
     return response
 
 
+@standalone_router.get("/{artifact_id}/status")
+async def get_artifact_status(
+    artifact_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    获取 artifact 生成状态（轻量级接口，用于前端轮询）
+    
+    返回 artifact 的当前状态，不包含完整内容。
+    适用于前端轮询检查生成是否完成。
+    
+    Args:
+        artifact_id: Artifact ID
+        user_id: 当前用户 ID (来自依赖注入)
+        db: 数据库会话
+        
+    Returns:
+        ArtifactStatusResponse: 状态信息
+        
+    Raises:
+        HTTPException: 404 如果 artifact 不存在
+        HTTPException: 403 如果无权访问
+    """
+    logger.info(f"Getting artifact status: {artifact_id} for user {user_id}")
+    
+    # 获取 artifact
+    artifact_repo = ArtifactRepository(db)
+    artifact = artifact_repo.get_by_id(artifact_id)
+    
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact 不存在")
+    
+    # 验证所属任务的所有权
+    task_repo = TaskRepository(db)
+    task = task_repo.get_by_id(artifact.task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="关联的任务不存在")
+    
+    if task.user_id != user_id:
+        raise HTTPException(status_code=403, detail="无权访问此 artifact")
+    
+    # 获取状态信息
+    status = artifact_repo.get_status(artifact_id)
+    
+    if not status:
+        raise HTTPException(status_code=404, detail="无法获取 artifact 状态")
+    
+    logger.info(f"Artifact status retrieved: {artifact_id}, state={status['state']}")
+    
+    return status
+
+
 @standalone_router.put("/{artifact_id}")
 async def update_artifact(
     artifact_id: str,
@@ -384,7 +614,7 @@ async def update_artifact(
 @router.post(
     "/{task_id}/artifacts/{artifact_type}/generate",
     response_model=GenerateArtifactResponse,
-    status_code=201,
+    status_code=202,  # 202 Accepted - 异步处理
 )
 async def generate_artifact(
     artifact_type: str,
@@ -394,10 +624,15 @@ async def generate_artifact(
     llm_provider: LLMProvider = Depends(get_llm_provider),
 ):
     """
-    生成新版本的衍生内容
+    生成新版本的衍生内容（异步）
     
-    使用指定的提示词实例生成新版本的衍生内容。
-    版本号自动递增。
+    流程:
+    1. 立即创建占位 artifact（state=processing）
+    2. 返回 artifact_id 给前端
+    3. 异步执行实际生成
+    4. 生成完成后更新 artifact 的 content 和 state
+    
+    前端可以通过 GET /api/v1/artifacts/{artifact_id}/status 轮询状态。
     
     Args:
         artifact_type: 衍生内容类型 (meeting_minutes, action_items, summary_notes)
@@ -407,7 +642,7 @@ async def generate_artifact(
         llm_provider: LLM 提供商
         
     Returns:
-        GenerateArtifactResponse: 生成响应
+        GenerateArtifactResponse: 生成响应（立即返回，state=processing）
         
     Raises:
         HTTPException: 404 如果任务不存在
@@ -434,161 +669,64 @@ async def generate_artifact(
             detail=f"无效的衍生内容类型: {artifact_type},有效值: {valid_types}",
         )
     
-    # 获取转写结果
-    transcript_repo = TranscriptRepository(db)
-    transcript = transcript_repo.get_by_task_id(task.task_id)
+    # 校验 display_name 必填
+    if not request.name or not request.name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="display_name (name) is required"
+        )
     
-    if not transcript:
-        raise HTTPException(status_code=404, detail="转写记录不存在")
+    display_name = request.name.strip()
     
-    # Phase 2: 实际调用 LLM 生成内容
-    try:
-        # 使用依赖注入的 LLM 提供商
-        from src.services.artifact_generation import ArtifactGenerationService
-        from src.core.models import PromptInstance, OutputLanguage
-        
-        artifact_service = ArtifactGenerationService(
-            llm_provider=llm_provider,  # 使用依赖注入的 provider
-            template_repo=None,  # 暂时不使用模板仓库
-            artifact_repo=None,  # 直接在这里保存
-        )
-        
-        # 转换转写记录为 TranscriptionResult
-        transcript_result = transcript_repo.to_transcription_result(transcript)
-        
-        # 直接使用请求中的 prompt_instance，不要重新创建
-        # 这样可以保留 prompt_text 和其他字段
-        prompt_instance = request.prompt_instance
-        
-        # 获取当前最大版本号
-        artifact_repo = ArtifactRepository(db)
-        existing_artifacts = artifact_repo.get_by_task_and_type(task.task_id, artifact_type)
-        max_version = max([a.version for a in existing_artifacts], default=0)
-        new_version = max_version + 1
-        
-        logger.info(f"Generating {artifact_type} version {new_version} using ArtifactGenerationService")
-        
-        # 生成 artifact_id
-        artifact_id = f"artifact_{uuid.uuid4().hex[:16]}"
-        
-        # 使用 ArtifactGenerationService 生成内容
-        from src.services.artifact_generation import ArtifactGenerationService
-        from src.database.repositories import PromptTemplateRepository
-        
-        # 创建 template_repo（服务可能需要查询模板）
-        template_repo = PromptTemplateRepository(db)
-        
-        # 注意：不需要在这里查询模板
-        # 服务层会根据 prompt_instance 自动决定：
-        # 1. 如果有 prompt_text，使用它（用户修改过的内容）
-        # 2. 如果没有 prompt_text，从数据库查询模板
-        logger.info(f"Generating artifact with prompt_instance: template_id={request.prompt_instance.template_id}, has_prompt_text={bool(request.prompt_instance.prompt_text)}")
-        
-        # 创建 ArtifactGenerationService
-        artifact_service = ArtifactGenerationService(
-            llm_provider=llm_provider,
-            template_repo=template_repo,
-            artifact_repo=artifact_repo,
-        )
-        
-        # 调用服务生成内容（template=None，让服务自动处理）
-        output_lang = OutputLanguage.ZH_CN if request.prompt_instance.language == "zh-CN" else OutputLanguage.EN_US
-        generated_artifact = await artifact_service.generate_artifact(
-            task_id=task.task_id,
-            transcript=transcript_result,
-            artifact_type=artifact_type,
-            prompt_instance=prompt_instance,
-            output_language=output_lang,
-            user_id=task.user_id,
-            template=None,  # 让服务层自动处理模板
-            meeting_date=task.meeting_date,  # 传递会议日期
-            meeting_time=task.meeting_time,  # 传递会议时间
-        )
-        
-        # 如果用户提供了自定义名称，保存到数据库
-        display_name = None
-        if request.name and request.name.strip():
-            artifact_record = artifact_repo.get_by_id(generated_artifact.artifact_id)
-            if artifact_record:
-                artifact_record.display_name = request.name.strip()
-                display_name = request.name.strip()
-                db.commit()
-                logger.info(f"Saved display_name '{request.name}' for artifact {generated_artifact.artifact_id}")
-        
-        logger.info(f"Artifact {generated_artifact.artifact_id} generated successfully (version {generated_artifact.version})")
-        
-        # 更新内容最后修改时间
-        task.last_content_modified_at = datetime.now()
-        db.commit()
-        
-        # 发送企微通知（异步，不阻塞响应）
-        asyncio.create_task(_send_success_notification(
-            task_id=task.task_id,
-            task_name=task.name,
-            meeting_date=task.meeting_date,
-            meeting_time=task.meeting_time,
-            artifact_id=generated_artifact.artifact_id,
-            artifact_type=artifact_type,
-            display_name=display_name,
-            user_id=task.user_id
-        ))
-        
-        return GenerateArtifactResponse(
-            success=True,
-            artifact_id=generated_artifact.artifact_id,
-            version=generated_artifact.version,
-            content=generated_artifact.get_content_dict(),
-            display_name=display_name,
-            message=f"衍生内容已生成 (版本 {generated_artifact.version})",
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to generate artifact with LLM: {e}", exc_info=True)
-        
-        # 发送企微失败通知（异步，不阻塞响应）
-        asyncio.create_task(_send_failure_notification(
-            task_id=task.task_id,
-            task_name=task.name,
-            meeting_date=task.meeting_date,
-            meeting_time=task.meeting_time,
-            error_code="ARTIFACT_GENERATION_FAILED",
-            error_message=str(e),
-            user_id=task.user_id
-        ))
-        
-        # 降级到占位符
-        artifact_repo = ArtifactRepository(db)
-        existing_artifacts = artifact_repo.get_by_task_and_type(task.task_id, artifact_type)
-        max_version = max([a.version for a in existing_artifacts], default=0)
-        new_version = max_version + 1
-        
-        artifact_id = f"artifact_{uuid.uuid4().hex[:16]}"
-        
-        placeholder_content = {
-            "type": artifact_type,
-            "version": new_version,
-            "error": str(e),
-            "note": "LLM generation failed, using placeholder",
-        }
-        
-        artifact = artifact_repo.create(
-            artifact_id=artifact_id,
-            task_id=task.task_id,
-            artifact_type=artifact_type,
-            version=new_version,
-            prompt_instance=request.prompt_instance.model_dump(),
-            content=placeholder_content,
-            metadata={"generated_via_api": True, "error": str(e)},
-            created_by=task.user_id,
-        )
-        
-        return GenerateArtifactResponse(
-            success=False,
-            artifact_id=artifact_id,
-            version=new_version,
-            content=artifact.get_content_dict(),
-            message=f"LLM 生成失败，返回占位符内容: {str(e)}",
-        )
+    # 获取当前最大版本号（按 display_name 而不是 artifact_type）
+    artifact_repo = ArtifactRepository(db)
+    existing_artifacts = artifact_repo.get_by_task_and_name(task.task_id, display_name)
+    max_version = max([a.version for a in existing_artifacts], default=0)
+    new_version = max_version + 1
+    
+    # 生成 artifact_id
+    artifact_id = f"artifact_{uuid.uuid4().hex[:16]}"
+    
+    # 立即创建占位 artifact（state=processing）
+    placeholder_artifact = artifact_repo.create_placeholder(
+        artifact_id=artifact_id,
+        task_id=task.task_id,
+        artifact_type=artifact_type,
+        version=new_version,
+        prompt_instance=request.prompt_instance.model_dump(),
+        created_by=task.user_id,
+        display_name=display_name,
+        metadata={"generated_via_api": True, "async": True},
+    )
+    
+    # 提交占位 artifact
+    db.commit()
+    
+    logger.info(f"Placeholder artifact created: {artifact_id} (state=processing)")
+    
+    # 异步执行实际生成
+    asyncio.create_task(_generate_artifact_async(
+        artifact_id=artifact_id,
+        task_id=task.task_id,
+        artifact_type=artifact_type,
+        prompt_instance=request.prompt_instance,
+        display_name=display_name,
+        user_id=task.user_id,
+        meeting_date=task.meeting_date,
+        meeting_time=task.meeting_time,
+        task_name=task.name,
+    ))
+    
+    # 立即返回占位响应
+    return GenerateArtifactResponse(
+        success=True,
+        artifact_id=artifact_id,
+        version=new_version,
+        content={"status": "generating", "message": "内容生成中，请稍候..."},
+        display_name=display_name,
+        state="processing",
+        message=f"衍生内容生成已启动 (版本 {new_version})，请稍候...",
+    )
 
 
 # ============================================================================

@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 class WeComNotificationService:
     """企业微信通知服务"""
     
-    def __init__(self, api_url: str = "http://gsmsg.gs.com:24905", frontend_base_url: str = "http://localhost:3000"):
+    def __init__(self, api_url: str = "http://gsmsg.gs.com:24905", frontend_base_url: str = "http://localhost:5173"):
         """
         初始化企微通知服务
         
@@ -54,23 +54,25 @@ class WeComNotificationService:
             bool: 是否发送成功
         """
         try:
-            # 构建 workspace 链接
-            workspace_url = f"{self.frontend_base_url}/tasks/{task_id}/workspace?artifactId={artifact_id}"
+            # 构建 workspace 链接（正确格式）
+            workspace_url = f"{self.frontend_base_url}/workspace/{task_id}"
             
             # 构建会议时间显示
             meeting_datetime = self._format_meeting_datetime(meeting_date, meeting_time)
             
-            # 构建 Markdown 消息
-            message = f"""# ✅ 会议纪要生成成功
+            # 获取 artifact 显示名称
+            artifact_display = display_name or self._get_default_artifact_name(artifact_type)
+            
+            # 构建标准 Markdown 消息
+            message = f"""✅ **会议纪要生成成功**
 
 **会议名称**: {task_name or '未命名会议'}
-
 **会议时间**: {meeting_datetime}
+**生成内容**: {artifact_display}
 
 ---
 
-[📄 点击查看会议纪要]({workspace_url})
-"""
+📄 [点击查看会议纪要]({workspace_url})"""
             
             # 发送通知
             response = requests.post(
@@ -126,21 +128,18 @@ class WeComNotificationService:
             # 构建会议时间显示
             meeting_datetime = self._format_meeting_datetime(meeting_date, meeting_time)
             
-            # 构建 Markdown 消息
-            message = f"""# ❌ 会议纪要生成失败
+            # 构建标准 Markdown 消息
+            message = f"""❌ **会议纪要生成失败**
 
 **会议名称**: {task_name or '未命名会议'}
-
 **会议时间**: {meeting_datetime}
 
 **错误信息**: {error_message or '未知错误'}
-
 **错误码**: {error_code or 'UNKNOWN'}
 
 ---
 
-[🔧 前往工作台查看详情]({workbench_url})
-"""
+🔧 [前往工作台查看详情]({workbench_url})"""
             
             # 发送通知
             response = requests.post(
@@ -218,6 +217,6 @@ def get_wecom_service(api_url: str = None, frontend_base_url: str = None) -> WeC
     if _wecom_service is None:
         _wecom_service = WeComNotificationService(
             api_url=api_url or "http://gsmsg.gs.com:24905",
-            frontend_base_url=frontend_base_url or "http://localhost:3000"
+            frontend_base_url=frontend_base_url or "http://localhost:5173"
         )
     return _wecom_service

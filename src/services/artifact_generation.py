@@ -140,13 +140,26 @@ class ArtifactGenerationService:
                     f"支持的语言: {template.supported_languages}"
                 )
             
-            # 4. 获取下一个版本号
-            next_version = await self._get_next_version(task_id, artifact_type)
+            # 4. 获取 display_name（如果提供）
+            display_name = kwargs.get("display_name")
             
-            # 5. 生成唯一的 artifact_id（使用 UUID 避免冲突）
-            artifact_id = f"artifact_{uuid.uuid4().hex[:16]}"
+            # 5. 获取下一个版本号（基于 display_name 或 artifact_type）
+            next_version = await self._get_next_version(task_id, artifact_type, display_name)
             
-            # 6. 调用 LLM 生成内容
+            # 6. 生成或使用提供的 artifact_id
+            # 如果调用者提供了 artifact_id（异步生成场景），使用它
+            # 否则生成新的 artifact_id（同步生成场景）
+            artifact_id = kwargs.get("artifact_id")
+            if not artifact_id:
+                artifact_id = f"artifact_{uuid.uuid4().hex[:16]}"
+                logger.info(f"Generated new artifact_id: {artifact_id}")
+            else:
+                logger.info(f"Using provided artifact_id: {artifact_id}")
+            
+            # 从 kwargs 中移除 artifact_id，避免重复传递
+            kwargs_without_artifact_id = {k: v for k, v in kwargs.items() if k != "artifact_id"}
+            
+            # 7. 调用 LLM 生成内容
             artifact = await self.llm.generate_artifact(
                 transcript=transcript,
                 prompt_instance=prompt_instance,
@@ -156,25 +169,46 @@ class ArtifactGenerationService:
                 artifact_id=artifact_id,
                 version=next_version,
                 created_by=user_id,
-                **kwargs,
+                **kwargs_without_artifact_id,
             )
             
-            # 7. 保存到数据库(如果有 repo)
+            # 8. 保存到数据库(如果有 repo)
             if self.artifacts is not None:
-                # Convert GeneratedArtifact to repository parameters
-                self.artifacts.create(
-                    artifact_id=artifact.artifact_id,
-                    task_id=artifact.task_id,
-                    artifact_type=artifact.artifact_type,
-                    version=artifact.version,
-                    prompt_instance=artifact.prompt_instance.dict() if hasattr(artifact.prompt_instance, 'dict') else artifact.prompt_instance,
-                    content=artifact.content,
-                    created_by=artifact.created_by,
-                    metadata=artifact.metadata,
-                )
+                # 检查是否使用了已存在的 artifact_id（异步生成场景）
+                provided_artifact_id = kwargs.get("artifact_id")
+                
+                if provided_artifact_id:
+                    # 异步生成场景：更新已存在的占位 artifact
+                    logger.info(f"Updating existing placeholder artifact: {artifact.artifact_id}")
+                    self.artifacts.update_content_and_state(
+                        artifact_id=artifact.artifact_id,
+                        content=artifact.get_content_dict(),
+                        state="success",
+                    )
+                    # 更新 display_name
+                    artifact_record = self.artifacts.get_by_id(artifact.artifact_id)
+                    if artifact_record and display_name:
+                        artifact_record.display_name = display_name
+                else:
+                    # 同步生成场景：创建新 artifact
+                    logger.info(f"Creating new artifact: {artifact.artifact_id}")
+                    self.artifacts.create(
+                        artifact_id=artifact.artifact_id,
+                        task_id=artifact.task_id,
+                        artifact_type=artifact.artifact_type,
+                        version=artifact.version,
+                        prompt_instance=artifact.prompt_instance.dict() if hasattr(artifact.prompt_instance, 'dict') else artifact.prompt_instance,
+                        content=artifact.content,
+                        created_by=artifact.created_by,
+                        metadata=artifact.metadata,
+                        display_name=display_name,  # 传递 display_name
+                        state="success",  # 明确设置为 success
+                    )
+                
                 logger.info(
                     f"Saved artifact to repository: {artifact.artifact_id}, "
-                    f"type={artifact.artifact_type}, version={artifact.version}"
+                    f"type={artifact.artifact_type}, version={artifact.version}, "
+                    f"display_name={display_name}"
                 )
             
             logger.info(
@@ -190,13 +224,18 @@ class ArtifactGenerationService:
             logger.error(f"Failed to generate artifact: {e}", exc_info=True)
             raise LLMError(f"生成衍生内容失败: {e}", provider="artifact_generation")
 
-    async def _get_next_version(self, task_id: str, artifact_type: str) -> int:
+    async def _get_next_version(self, task_id: str, artifact_type: str, display_name: Optional[str] = None) -> int:
         """
         获取下一个版本号
+        
+        版本号策略：
+        - 如果提供了 display_name，则基于 display_name 计算版本号（同名 artifact 递增）
+        - 如果没有 display_name，则基于 artifact_type 计算版本号（向后兼容）
         
         Args:
             task_id: 任务 ID
             artifact_type: 内容类型
+            display_name: 显示名称（可选）
             
         Returns:
             int: 下一个版本号
@@ -206,10 +245,33 @@ class ArtifactGenerationService:
             return 1
         
         try:
-            latest_version = self.artifacts.get_latest_by_task(
-                task_id=task_id, artifact_type=artifact_type
-            )
-            return (latest_version.version + 1) if latest_version else 1
+            # 优先使用 display_name 来判断版本
+            if display_name:
+                versions = self.artifacts.get_by_task_and_name(
+                    task_id=task_id, display_name=display_name
+                )
+                if versions:
+                    latest_version = versions[0]  # 已按 version 降序排列
+                    next_version = latest_version.version + 1
+                    logger.info(
+                        f"Next version for display_name '{display_name}': {next_version} "
+                        f"(previous version: {latest_version.version})"
+                    )
+                    return next_version
+                else:
+                    logger.info(f"First version for display_name '{display_name}': 1")
+                    return 1
+            else:
+                # 向后兼容：如果没有 display_name，使用 artifact_type
+                latest_version = self.artifacts.get_latest_by_task(
+                    task_id=task_id, artifact_type=artifact_type
+                )
+                next_version = (latest_version.version + 1) if latest_version else 1
+                logger.info(
+                    f"Next version for artifact_type '{artifact_type}': {next_version} "
+                    f"(no display_name provided, using legacy logic)"
+                )
+                return next_version
         except Exception as e:
             logger.warning(f"Failed to get latest version, defaulting to 1: {e}")
             return 1

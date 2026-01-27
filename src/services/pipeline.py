@@ -19,6 +19,7 @@ from src.services.speaker_recognition import SpeakerRecognitionService
 from src.services.transcription import TranscriptionService
 from src.utils.cost import CostTracker
 from src.utils.error_handler import classify_exception
+from src.utils.wecom_notification import get_wecom_service
 from src.config.models import PricingConfig
 
 logger = logging.getLogger(__name__)
@@ -303,21 +304,32 @@ class PipelineService:
                     audio_duration=audio_duration,
                 )
                 
-                # 保存 speaker mapping 到数据库
+                # 保存 speaker mapping 到数据库（使用真实姓名）
                 if self.speaker_mappings is not None and speaker_mapping:
                     try:
+                        # 批量查询真实姓名
+                        speaker_ids = list(speaker_mapping.values())
+                        display_names = {}
+                        if self.speakers is not None:
+                            display_names = self.speakers.get_display_names_batch(speaker_ids)
+                        
                         for speaker_label, speaker_id in speaker_mapping.items():
                             # speaker_label: "Speaker 1", "Speaker 2"
                             # speaker_id: "speaker_linyudong", "speaker_lanweiyi"
-                            # 暂时使用 speaker_id 作为 speaker_name，后续会通过 API 关联真实姓名
+                            # 使用真实姓名（如果存在），否则使用声纹 ID
+                            speaker_name = display_names.get(speaker_id, speaker_id)
+                            
                             self.speaker_mappings.create_or_update(
                                 task_id=task_id,
                                 speaker_label=speaker_label,
-                                speaker_name=speaker_id,  # 先存储声纹 ID
+                                speaker_name=speaker_name,  # 存储真实姓名
                                 speaker_id=speaker_id,
                                 confidence=None,  # TODO: 从识别结果获取置信度
                             )
-                        logger.info(f"Task {task_id}: Speaker mappings saved to database")
+                        logger.info(
+                            f"Task {task_id}: Speaker mappings saved to database with real names: "
+                            f"{[(label, display_names.get(sid, sid)) for label, sid in speaker_mapping.items()]}"
+                        )
                     except Exception as e:
                         logger.warning(f"Task {task_id}: Failed to save speaker mappings: {e}")
                 
@@ -338,8 +350,46 @@ class PipelineService:
                     audio_duration=audio_duration,
                 )
                 
-                transcript = await self.correction.correct_speakers(transcript, speaker_mapping)
-                logger.info(f"Task {task_id}: Speaker correction completed")
+                # 构建真实姓名映射：Speaker 1 -> 林煜东
+                real_name_mapping = {}
+                if self.speakers is not None:
+                    try:
+                        # 获取声纹 ID 列表
+                        speaker_ids = list(speaker_mapping.values())
+                        
+                        # 批量查询真实姓名
+                        display_names = self.speakers.get_display_names_batch(speaker_ids)
+                        
+                        # 构建映射：Speaker 1 -> 林煜东
+                        for speaker_label, speaker_id in speaker_mapping.items():
+                            real_name = display_names.get(speaker_id, speaker_id)
+                            real_name_mapping[speaker_label] = real_name
+                        
+                        logger.info(
+                            f"Task {task_id}: Real name mapping constructed: {real_name_mapping}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Task {task_id}: Failed to get real names, using voiceprint IDs: {e}")
+                        # 如果查询失败，使用声纹 ID
+                        real_name_mapping = speaker_mapping
+                else:
+                    # 如果没有 speakers repository，使用声纹 ID
+                    real_name_mapping = speaker_mapping
+                
+                # 应用真实姓名映射到 transcript
+                transcript = await self.correction.correct_speakers(transcript, real_name_mapping)
+                logger.info(f"Task {task_id}: Speaker correction completed with real names")
+                
+                # 更新数据库中的 transcript segments（已包含真实姓名）
+                if self.transcripts is not None:
+                    try:
+                        self.transcripts.update_segments(
+                            task_id=task_id,
+                            segments=[seg.model_dump() for seg in transcript.segments],
+                        )
+                        logger.info(f"Task {task_id}: Transcript segments updated with real names in database")
+                    except Exception as e:
+                        logger.warning(f"Task {task_id}: Failed to update transcript segments: {e}")
                 
                 # 检查任务是否被取消
                 if cancellation_check and cancellation_check(task_id):
@@ -354,30 +404,6 @@ class PipelineService:
                     progress=70.0,
                     audio_duration=audio_duration,
                 )
-                
-                # 3.5. 替换成真实姓名（用于 LLM 生成）
-                if self.speakers is not None:
-                    try:
-                        # 获取声纹 ID 列表
-                        speaker_ids = list(speaker_mapping.values())
-                        
-                        # 批量查询真实姓名
-                        display_names = self.speakers.get_display_names_batch(speaker_ids)
-                        
-                        if display_names:
-                            # 创建新的映射：speaker_linyudong -> 林煜东
-                            # 注意：第一次修正后，transcript 中的 speaker 已经是 speaker_id 了
-                            real_name_mapping = {}
-                            for speaker_id, display_name in display_names.items():
-                                real_name_mapping[speaker_id] = display_name
-                            
-                            # 再次修正 transcript，替换成真实姓名
-                            transcript = await self.correction.correct_speakers(transcript, real_name_mapping)
-                            logger.info(
-                                f"Task {task_id}: Speaker names replaced with real names: {real_name_mapping}"
-                            )
-                    except Exception as e:
-                        logger.warning(f"Task {task_id}: Failed to replace with real names: {e}")
             else:
                 logger.info(f"Task {task_id}: No speaker mapping, skipping correction phase")
             
@@ -401,6 +427,7 @@ class PipelineService:
                     template=template,
                     meeting_date=meeting_date,  # 传入会议日期
                     meeting_time=meeting_time,  # 传入会议时间
+                    display_name="纪要",  # 添加默认 display_name
                 )
             except Exception as e:
                 # LLM 生成阶段错误
@@ -431,6 +458,54 @@ class PipelineService:
                 audio_duration=audio_duration,
             )
             
+            # 7. 发送企微通知（任务成功）
+            try:
+                # 获取用户账号和任务信息
+                user_account = None
+                task_name = None
+                if self.tasks:
+                    from src.database.repositories import UserRepository
+                    from src.database.session import session_scope
+                    with session_scope() as session:
+                        user_repo = UserRepository(session)
+                        user = user_repo.get_by_id(user_id)
+                        if user:
+                            user_account = user.username
+                        
+                        # 获取任务名称（字段名是 name 不是 task_name）
+                        task = self.tasks.get_by_id(task_id)
+                        if task:
+                            task_name = task.name
+                            # 如果 task.name 为 None，使用原始文件名（去掉扩展名）
+                            if not task_name and original_filenames:
+                                import os
+                                filename = original_filenames[0] if original_filenames else None
+                                if filename:
+                                    # 去掉文件扩展名
+                                    task_name = os.path.splitext(filename)[0]
+                
+                if user_account:
+                    wecom_service = get_wecom_service()
+                    success = wecom_service.send_artifact_success_notification(
+                        user_account=user_account,
+                        task_id=task_id,
+                        task_name=task_name,
+                        meeting_date=meeting_date,
+                        meeting_time=meeting_time,
+                        artifact_id=artifact.artifact_id,
+                        artifact_type="meeting_minutes",
+                        display_name="纪要",
+                    )
+                    if success:
+                        logger.info(f"Task {task_id}: WeCom notification sent successfully to {user_account}")
+                    else:
+                        logger.warning(f"Task {task_id}: WeCom notification failed to send to {user_account}")
+                else:
+                    logger.warning(f"Task {task_id}: Cannot send WeCom notification - user account not found")
+            except Exception as e:
+                # 通知失败不影响任务成功
+                logger.error(f"Task {task_id}: Failed to send WeCom notification: {e}", exc_info=True)
+            
             logger.info(f"Task {task_id}: Pipeline completed successfully")
             
             return artifact
@@ -457,6 +532,54 @@ class PipelineService:
             self._update_task_status(
                 task_id, TaskState.FAILED, error_details=str(e)
             )
+            
+            # 发送企微通知（任务失败）
+            try:
+                # 获取用户账号和任务信息
+                user_account = None
+                task_name = None
+                if self.tasks:
+                    from src.database.repositories import UserRepository
+                    from src.database.session import session_scope
+                    with session_scope() as session:
+                        user_repo = UserRepository(session)
+                        user = user_repo.get_by_id(user_id)
+                        if user:
+                            user_account = user.username
+                        
+                        # 获取任务信息（字段名是 name 不是 task_name）
+                        task = self.tasks.get_by_id(task_id)
+                        if task:
+                            task_name = task.name
+                            # 如果 task.name 为 None，使用原始文件名（去掉扩展名）
+                            if not task_name:
+                                filenames = task.get_original_filenames_list()
+                                if filenames:
+                                    import os
+                                    task_name = os.path.splitext(filenames[0])[0]
+                
+                if user_account:
+                    # 获取错误信息
+                    task = self.tasks.get_by_id(task_id) if self.tasks else None
+                    error_code = task.error_code if task else "UNKNOWN_ERROR"
+                    error_message = task.error_message if task else str(e)
+                    
+                    wecom_service = get_wecom_service()
+                    wecom_service.send_artifact_failure_notification(
+                        user_account=user_account,
+                        task_id=task_id,
+                        task_name=task_name,
+                        meeting_date=meeting_date if 'meeting_date' in locals() else None,
+                        meeting_time=meeting_time if 'meeting_time' in locals() else None,
+                        error_code=error_code,
+                        error_message=error_message,
+                    )
+                    logger.info(f"Task {task_id}: WeCom failure notification sent to {user_account}")
+                else:
+                    logger.warning(f"Task {task_id}: Cannot send WeCom notification - user account not found")
+            except Exception as notify_error:
+                # 通知失败不影响错误处理
+                logger.error(f"Task {task_id}: Failed to send WeCom failure notification: {notify_error}", exc_info=True)
             
             # 如果是 MeetingAgentError,直接抛出
             if isinstance(e, MeetingAgentError):

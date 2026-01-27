@@ -158,12 +158,22 @@ class CorrectTranscriptRequest(BaseModel):
     """修正转写文本请求"""
 
     corrected_text: str = Field(..., description="修正后的完整文本")
+    segments: Optional[List[Dict[str, Any]]] = Field(default=None, description="修正后的转写片段（可选）")
     regenerate_artifacts: bool = Field(default=True, description="是否重新生成衍生内容")
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "corrected_text": "修正后的会议转写文本...",
+                "segments": [
+                    {
+                        "text": "大家好",
+                        "start_time": 0.0,
+                        "end_time": 1.5,
+                        "speaker": "林煜东",
+                        "confidence": 0.95
+                    }
+                ],
                 "regenerate_artifacts": True,
             }
         }
@@ -235,6 +245,7 @@ class GenerateArtifactResponse(BaseModel):
     version: int
     content: Dict
     display_name: Optional[str] = Field(None, description="自定义显示名称")
+    state: str = Field(default="success", description="生成状态 (processing/success/failed)")
     message: str = "内容已生成"
 
 
@@ -255,6 +266,7 @@ class ArtifactInfo(BaseModel):
     version: int
     prompt_instance: PromptInstance
     display_name: Optional[str] = Field(None, description="自定义显示名称")
+    state: str = Field(default="success", description="生成状态 (processing/success/failed)")
     created_at: datetime
     created_by: str
 
@@ -272,6 +284,42 @@ class ArtifactDetailResponse(BaseModel):
     """衍生内容详情响应"""
 
     artifact: GeneratedArtifact = Field(..., description="完整的衍生内容")
+
+
+class ArtifactStatusResponse(BaseModel):
+    """Artifact 状态响应（轻量级，用于轮询）"""
+
+    artifact_id: str = Field(..., description="Artifact ID")
+    state: str = Field(..., description="生成状态 (processing/success/failed)")
+    created_at: str = Field(..., description="创建时间（ISO格式）")
+    error: Optional[Dict[str, str]] = Field(None, description="错误信息（失败时，固定字段：code, message, hint?）")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "artifact_id": "artifact_abc123",
+                    "state": "processing",
+                    "created_at": "2026-01-27T10:00:00Z",
+                },
+                {
+                    "artifact_id": "artifact_abc123",
+                    "state": "success",
+                    "created_at": "2026-01-27T10:00:00Z",
+                },
+                {
+                    "artifact_id": "artifact_abc123",
+                    "state": "failed",
+                    "created_at": "2026-01-27T10:00:00Z",
+                    "error": {
+                        "code": "LLM_TIMEOUT",
+                        "message": "LLM 生成超时",
+                        "hint": "可在 Workspace 首版纪要查看已有内容"
+                    },
+                },
+            ]
+        }
+    }
 
 
 # ============================================================================
