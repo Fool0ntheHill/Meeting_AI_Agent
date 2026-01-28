@@ -322,6 +322,21 @@ class ArtifactStatusResponse(BaseModel):
     }
 
 
+class RenameArtifactRequest(BaseModel):
+    """重命名 Artifact 请求"""
+
+    display_name: str = Field(..., min_length=1, max_length=256, description="新的显示名称")
+
+
+class RenameArtifactResponse(BaseModel):
+    """重命名 Artifact 响应"""
+
+    success: bool
+    artifact_id: str
+    display_name: str
+    message: str = "Artifact renamed"
+
+
 # ============================================================================
 # Prompt Template Schemas
 # ============================================================================

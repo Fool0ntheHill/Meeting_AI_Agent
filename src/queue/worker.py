@@ -9,6 +9,7 @@ import sys
 import time
 import logging
 import asyncio
+import os
 from typing import Optional
 from datetime import datetime
 
@@ -55,8 +56,9 @@ class TaskWorker:
         self.redis_client = None
         try:
             import redis
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
             self.redis_client = redis.from_url(
-                "redis://localhost:6379/0",
+                redis_url,
                 decode_responses=True,
             )
             self.redis_client.ping()

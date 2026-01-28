@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: meeting_agent_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-meeting_agent}
+      POSTGRES_USER: ${DB_USER:-meeting_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-your_secure_password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-meeting_user} -d ${DB_NAME:-meeting_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    container_name: meeting_agent_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+  backend:
+    build: .
+    container_name: meeting_agent_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-meeting_agent}
+      DB_USER: ${DB_USER:-meeting_user}
+      DB_PASSWORD: ${DB_PASSWORD:-your_secure_password}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+  worker:
+    build: .
+    container_name: meeting_agent_worker
+    restart: unless-stopped
+    command: python worker.py
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-meeting_agent}
+      DB_USER: ${DB_USER:-meeting_user}
+      DB_PASSWORD: ${DB_PASSWORD:-your_secure_password}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+  frontend:
+    build:
+      context: ./frontend
+    container_name: meeting_agent_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+
+volumes:
+  postgres_data:
+  redis_data:

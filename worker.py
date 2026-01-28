@@ -33,6 +33,15 @@ setup_logger()
 logger = logging.getLogger(__name__)
 
 
+def _build_database_url(config) -> str:
+    db = config.database
+    if db.host and db.username and db.password and db.database:
+        return f"postgresql://{db.username}:{db.password}@{db.host}:{db.port}/{db.database}"
+    if db.database:
+        return f"sqlite:///./{db.database}"
+    return "sqlite:///./meeting_agent.db"
+
+
 def create_worker() -> TaskWorker:
     """
     创建 Worker 实例
@@ -43,9 +52,9 @@ def create_worker() -> TaskWorker:
     # 加载配置
     config = get_config()
     
-    # 初始化数据库 (使用 SQLite)
-    database_url = "sqlite:///./meeting_agent.db"
-    init_db(database_url)
+    # 初始化数据库
+    database_url = _build_database_url(config)
+    init_db(database_url, echo=config.database.echo)
     
     # 创建提供商
     volcano_asr = VolcanoASR(config.volcano)

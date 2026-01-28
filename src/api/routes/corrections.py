@@ -323,7 +323,7 @@ async def regenerate_artifact(
     logger.info(f"Placeholder artifact created for regeneration: {artifact_id} (state=processing)")
     
     # 异步执行实际生成（复用 artifacts.py 的函数）
-    from src.api.routes.artifacts import _generate_artifact_async
+    from src.api.routes.artifacts import _generate_artifact_async, _resolve_task_name
     
     asyncio.create_task(_generate_artifact_async(
         artifact_id=artifact_id,
@@ -334,7 +334,7 @@ async def regenerate_artifact(
         user_id=task.user_id,
         meeting_date=task.meeting_date,
         meeting_time=task.meeting_time,
-        task_name=task.name,
+        task_name=_resolve_task_name(task),
     ))
     
     # 立即返回占位响应

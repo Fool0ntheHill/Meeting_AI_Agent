@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 import uuid
 import json
 import asyncio
+import os
 
 from src.api.dependencies import get_db, get_current_user_id, get_llm_provider, verify_task_ownership
 from src.database.models import Task
@@ -29,6 +30,8 @@ from src.api.schemas import (
     ArtifactDetailResponse,
     GenerateArtifactRequest,
     GenerateArtifactResponse,
+    RenameArtifactRequest,
+    RenameArtifactResponse,
 )
 from src.core.models import TaskState, GeneratedArtifact, PromptInstance
 from src.core.providers import LLMProvider
@@ -77,6 +80,19 @@ def _group_artifacts_by_type(artifacts: List) -> Dict[str, List[ArtifactInfo]]:
             grouped[artifact_type] = []
         grouped[artifact_type].append(_record_to_artifact_info(artifact))
     return grouped
+
+
+def _resolve_task_name(task: Task) -> Optional[str]:
+    """Resolve task name for notifications with filename fallback."""
+    if task.name:
+        return task.name
+    try:
+        filenames = task.get_original_filenames_list()
+    except Exception:
+        filenames = None
+    if filenames:
+        return os.path.splitext(filenames[0])[0]
+    return None
 
 
 # ============================================================================
@@ -609,6 +625,47 @@ async def update_artifact(
         "artifact_id": artifact_id,
         "message": "内容已更新"
     }
+@standalone_router.patch("/{artifact_id}", response_model=RenameArtifactResponse)
+async def rename_artifact(
+    artifact_id: str,
+    request: RenameArtifactRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    重命名 artifact（更新 display_name）
+    """
+    display_name = request.display_name.strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="display_name is required")
+
+    artifact_repo = ArtifactRepository(db)
+    artifact = artifact_repo.get_by_id(artifact_id)
+
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact 不存在")
+
+    task_repo = TaskRepository(db)
+    task = task_repo.get_by_id(artifact.task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="关联任务不存在")
+
+    if task.user_id != user_id:
+        raise HTTPException(status_code=403, detail="无权访问此 artifact")
+
+    artifact.display_name = display_name
+    task.last_content_modified_at = datetime.now()
+    db.commit()
+
+    logger.info(f"Artifact renamed: {artifact_id} -> {display_name}")
+
+    return RenameArtifactResponse(
+        success=True,
+        artifact_id=artifact_id,
+        display_name=display_name,
+        message="Artifact renamed",
+    )
 
 
 @router.post(
@@ -714,7 +771,7 @@ async def generate_artifact(
         user_id=task.user_id,
         meeting_date=task.meeting_date,
         meeting_time=task.meeting_time,
-        task_name=task.name,
+        task_name=_resolve_task_name(task),
     ))
     
     # 立即返回占位响应

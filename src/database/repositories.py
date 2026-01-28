@@ -2,6 +2,7 @@
 """Database repositories for data access."""
 
 import json
+import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
@@ -200,8 +201,9 @@ class TaskRepository:
         try:
             import redis
             # 使用连接池，避免每次都创建新连接
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
             r = redis.from_url(
-                "redis://localhost:6379/0",
+                redis_url,
                 decode_responses=True,
                 socket_connect_timeout=1,  # 1秒连接超时
                 socket_timeout=1,  # 1秒操作超时

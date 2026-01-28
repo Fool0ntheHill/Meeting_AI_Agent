@@ -2,6 +2,7 @@
 """Task management endpoints."""
 
 import json
+import os
 import uuid
 from typing import List, Optional
 
@@ -45,9 +46,10 @@ def get_queue_manager() -> QueueManager:
         # 默认使用 Redis
         # TODO: 从配置文件读取
         try:
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
             _queue_manager = QueueManager(
                 backend=QueueBackend.REDIS,
-                redis_url="redis://localhost:6379/0",
+                redis_url=redis_url,
             )
         except Exception as e:
             raise HTTPException(
@@ -63,8 +65,9 @@ def get_redis_client() -> redis.Redis:
     if _redis_client is None:
         # TODO: 从配置文件读取
         try:
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
             _redis_client = redis.from_url(
-                "redis://localhost:6379/0",
+                redis_url,
                 decode_responses=True,
             )
             # 测试连接

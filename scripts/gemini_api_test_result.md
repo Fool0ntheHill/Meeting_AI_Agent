@@ -2,7 +2,7 @@
 
 ## 测试信息
 - **Base URL**: http://llm-api.gs.com:4000
-- **API Key**: sk-xpN9dyo7ZD4choN8Qf909A
+- **API Key**: 
 - **测试时间**: 2026-01-19
 
 ## 测试结果

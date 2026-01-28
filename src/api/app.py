@@ -9,10 +9,21 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.middleware import ErrorHandlerMiddleware, LoggingMiddleware
 from src.api.routes import api_router
+from src.config.loader import get_config
 from src.core.exceptions import MeetingAgentError
+from src.database.session import init_db
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _build_database_url(config) -> str:
+    db = config.database
+    if db.host and db.username and db.password and db.database:
+        return f"postgresql://{db.username}:{db.password}@{db.host}:{db.port}/{db.database}"
+    if db.database:
+        return f"sqlite:///./{db.database}"
+    return "sqlite:///./meeting_agent.db"
 
 
 def create_app() -> FastAPI:
@@ -99,9 +110,10 @@ def create_app() -> FastAPI:
         """应用启动事件"""
         logger.info("Meeting Minutes Agent API starting up...")
         
-        # TODO: 初始化数据库连接池
-        # TODO: 初始化 Redis 连接
-        # TODO: 初始化消息队列
+        config = get_config()
+        database_url = _build_database_url(config)
+        init_db(database_url, echo=config.database.echo)
+        logger.info("Database initialized for API")
         
         logger.info("Meeting Minutes Agent API started successfully")
     

@@ -1,0 +1,152 @@
+.workbench {
+  padding: 24px 16px 48px;
+}
+
+.workbench__container {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.workbench__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.workbench__progress {
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(15, 15, 15, 0.06);
+}
+
+.workbench__hint {
+  display: block;
+  margin-top: 8px;
+}
+
+.workbench__control {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.workbench__steps,
+.workbench__info {
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(15, 15, 15, 0.06);
+}
+
+.workbench__col {
+  display: flex;
+}
+
+.workbench__card {
+  width: 100%;
+  height: 100%;
+}
+
+.workbench__step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fafafa;
+  transition: background 0.25s ease, transform 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.workbench__step--processing {
+  background: #e6f4ff;
+}
+
+.workbench__step--processing::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(22, 119, 255, 0) 0%, rgba(22, 119, 255, 0.25) 50%, rgba(22, 119, 255, 0) 100%);
+  animation: workbenchFlow 2.6s infinite;
+}
+
+.workbench__step--success {
+  opacity: 0.7;
+}
+
+.workbench__step--pending,
+.workbench__step--paused {
+  opacity: 0.6;
+}
+
+.workbench__step--failed {
+  background: #fff1f0;
+}
+
+.workbench__step-content {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 1;
+}
+
+.workbench__step-icon {
+  position: relative;
+  z-index: 1;
+}
+
+.workbench__step-sub {
+  font-size: 12px;
+}
+
+.workbench__step-detail {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.workbench__info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.workbench__info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.workbench__info-item:last-child {
+  border-bottom: none;
+}
+
+.workbench__info-sub {
+  display: block;
+  margin-top: 8px;
+}
+
+.workbench__logs {
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(15, 15, 15, 0.06);
+}
+
+@keyframes workbenchFlow {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(240%);
+  }
+}

@@ -11,8 +11,21 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy import create_engine, text, inspect
+from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import sessionmaker
-from src.database.models import Base, Task, TranscriptRecord, SpeakerMapping, PromptTemplate, Folder
+from src.database.models import (
+    Base,
+    AuditLogRecord,
+    Folder,
+    GeneratedArtifactRecord,
+    HotwordSetRecord,
+    PromptTemplateRecord,
+    Speaker,
+    SpeakerMapping,
+    Task,
+    TranscriptRecord,
+    User,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -37,11 +50,11 @@ def migrate_data(sqlite_url: str, postgresql_url: str, skip_existing: bool = Tru
     try:
         sqlite_engine = create_engine(sqlite_url, echo=False)
         postgresql_engine = create_engine(postgresql_url, echo=False)
-        print("✓ 数据库连接成功")
+        print("[OK] 数据库连接成功")
         print(f"  - 源数据库: {sqlite_url}")
         print(f"  - 目标数据库: {postgresql_url.split('@')[-1]}")
     except Exception as e:
-        print(f"✗ 数据库连接失败: {e}")
+        print(f"[FAIL] 数据库连接失败: {e}")
         return False
     print()
     
@@ -57,198 +70,83 @@ def migrate_data(sqlite_url: str, postgresql_url: str, skip_existing: bool = Tru
         print("[2/7] 检查源数据库...")
         inspector = inspect(sqlite_engine)
         tables = inspector.get_table_names()
-        print(f"✓ 找到 {len(tables)} 个表: {', '.join(tables)}")
+        print(f"[OK] 找到 {len(tables)} 个表: {', '.join(tables)}")
         print()
         
         # 创建目标数据库表结构
         print("[3/7] 创建目标数据库表结构...")
         Base.metadata.create_all(bind=postgresql_engine)
-        print("✓ 表结构创建成功")
+        print("[OK] 表结构创建成功")
         print()
         
-        # 迁移 folders 表
-        if "folders" in tables:
-            print("[4/7] 迁移 folders 表...")
-            folders = sqlite_session.query(Folder).all()
+        migrations = [
+            ("users", User),
+            ("folders", Folder),
+            ("speakers", Speaker),
+            ("tasks", Task),
+            ("transcripts", TranscriptRecord),
+            ("speaker_mappings", SpeakerMapping),
+            ("prompt_templates", PromptTemplateRecord),
+            ("generated_artifacts", GeneratedArtifactRecord),
+            ("hotword_sets", HotwordSetRecord),
+            ("audit_logs", AuditLogRecord),
+        ]
+        total_steps = 3 + len(migrations)
+        step_offset = 3
+        
+        for index, (table_name, model_cls) in enumerate(migrations, start=1):
+            step_number = step_offset + index
+            if table_name not in tables:
+                print(f"[{step_number}/{total_steps}] 跳过 {table_name} 表 (不存在)")
+                print()
+                continue
+            
+            print(f"[{step_number}/{total_steps}] 迁移 {table_name} 表...")
+            records = sqlite_session.query(model_cls).all()
             migrated = 0
             skipped = 0
             
-            for folder in folders:
-                if skip_existing:
-                    existing = postgresql_session.query(Folder).filter_by(folder_id=folder.folder_id).first()
-                    if existing:
-                        skipped += 1
-                        continue
-                
-                # 创建新对象（避免 session 冲突）
-                new_folder = Folder(
-                    folder_id=folder.folder_id,
-                    user_id=folder.user_id,
-                    tenant_id=folder.tenant_id,
-                    name=folder.name,
-                    parent_id=folder.parent_id,
-                    created_at=folder.created_at,
-                    updated_at=folder.updated_at,
-                )
-                postgresql_session.add(new_folder)
-                migrated += 1
-            
-            postgresql_session.commit()
-            print(f"✓ 迁移 {migrated} 个文件夹 (跳过 {skipped} 个)")
-        else:
-            print("[4/7] 跳过 folders 表 (不存在)")
-        print()
-        
-        # 迁移 tasks 表
-        print("[5/7] 迁移 tasks 表...")
-        tasks = sqlite_session.query(Task).all()
-        migrated = 0
-        skipped = 0
-        
-        for task in tasks:
-            if skip_existing:
-                existing = postgresql_session.query(Task).filter_by(task_id=task.task_id).first()
-                if existing:
-                    skipped += 1
-                    continue
-            
-            # 创建新对象
-            new_task = Task(
-                task_id=task.task_id,
-                user_id=task.user_id,
-                tenant_id=task.tenant_id,
-                task_name=task.task_name,
-                audio_file_path=task.audio_file_path,
-                audio_duration=task.audio_duration,
-                asr_provider=task.asr_provider,
-                asr_language=task.asr_language,
-                enable_speaker_recognition=task.enable_speaker_recognition,
-                state=task.state,
-                progress=task.progress,
-                created_at=task.created_at,
-                updated_at=task.updated_at,
-                started_at=task.started_at,
-                completed_at=task.completed_at,
-                error_code=task.error_code,
-                error_message=task.error_message,
-                error_details=task.error_details,
-                retryable=task.retryable,
-                folder_id=task.folder_id,
-                is_deleted=task.is_deleted,
-                deleted_at=task.deleted_at,
-                meeting_date=task.meeting_date,
-                meeting_location=task.meeting_location,
-                meeting_participants=task.meeting_participants,
-                content_modified_at=task.content_modified_at,
-            )
-            postgresql_session.add(new_task)
-            migrated += 1
-        
-        postgresql_session.commit()
-        print(f"✓ 迁移 {migrated} 个任务 (跳过 {skipped} 个)")
-        print()
-        
-        # 迁移 transcript_records 表
-        if "transcript_records" in tables:
-            print("[6/7] 迁移 transcript_records 表...")
-            records = sqlite_session.query(TranscriptRecord).all()
-            migrated = 0
-            skipped = 0
+            pk_columns = sa_inspect(model_cls).primary_key
+            column_attrs = sa_inspect(model_cls).mapper.column_attrs
             
             for record in records:
                 if skip_existing:
-                    existing = postgresql_session.query(TranscriptRecord).filter_by(
-                        task_id=record.task_id,
-                        segment_index=record.segment_index
-                    ).first()
+                    pk_filter = {col.key: getattr(record, col.key) for col in pk_columns}
+                    existing = postgresql_session.query(model_cls).filter_by(**pk_filter).first()
                     if existing:
                         skipped += 1
                         continue
                 
-                new_record = TranscriptRecord(
-                    task_id=record.task_id,
-                    segment_index=record.segment_index,
-                    start_time=record.start_time,
-                    end_time=record.end_time,
-                    text=record.text,
-                    speaker_id=record.speaker_id,
-                    confidence=record.confidence,
-                )
+                data = {col.key: getattr(record, col.key) for col in column_attrs}
+                new_record = model_cls(**data)
                 postgresql_session.add(new_record)
                 migrated += 1
             
             postgresql_session.commit()
-            print(f"✓ 迁移 {migrated} 个转写记录 (跳过 {skipped} 个)")
-        else:
-            print("[6/7] 跳过 transcript_records 表 (不存在)")
-        print()
-        
-        # 迁移 speaker_mappings 表
-        if "speaker_mappings" in tables:
-            print("[7/7] 迁移 speaker_mappings 表...")
-            mappings = sqlite_session.query(SpeakerMapping).all()
-            migrated = 0
-            skipped = 0
-            
-            for mapping in mappings:
-                if skip_existing:
-                    existing = postgresql_session.query(SpeakerMapping).filter_by(
-                        task_id=mapping.task_id,
-                        speaker_id=mapping.speaker_id
-                    ).first()
-                    if existing:
-                        skipped += 1
-                        continue
-                
-                new_mapping = SpeakerMapping(
-                    task_id=mapping.task_id,
-                    speaker_id=mapping.speaker_id,
-                    speaker_name=mapping.speaker_name,
-                    created_at=mapping.created_at,
-                    updated_at=mapping.updated_at,
-                )
-                postgresql_session.add(new_mapping)
-                migrated += 1
-            
-            postgresql_session.commit()
-            print(f"✓ 迁移 {migrated} 个说话人映射 (跳过 {skipped} 个)")
-        else:
-            print("[7/7] 跳过 speaker_mappings 表 (不存在)")
-        print()
+            print(f"[OK] 迁移 {migrated} 条记录 (跳过 {skipped} 条)")
+            print()
         
         # 验证迁移结果
         print("=" * 80)
         print("迁移结果验证:")
         print("=" * 80)
         
-        if "folders" in tables:
-            sqlite_folder_count = sqlite_session.query(Folder).count()
-            postgresql_folder_count = postgresql_session.query(Folder).count()
-            print(f"Folders: {sqlite_folder_count} (源) → {postgresql_folder_count} (目标)")
-        
-        sqlite_task_count = sqlite_session.query(Task).count()
-        postgresql_task_count = postgresql_session.query(Task).count()
-        print(f"Tasks: {sqlite_task_count} (源) → {postgresql_task_count} (目标)")
-        
-        if "transcript_records" in tables:
-            sqlite_record_count = sqlite_session.query(TranscriptRecord).count()
-            postgresql_record_count = postgresql_session.query(TranscriptRecord).count()
-            print(f"Transcript Records: {sqlite_record_count} (源) → {postgresql_record_count} (目标)")
-        
-        if "speaker_mappings" in tables:
-            sqlite_mapping_count = sqlite_session.query(SpeakerMapping).count()
-            postgresql_mapping_count = postgresql_session.query(SpeakerMapping).count()
-            print(f"Speaker Mappings: {sqlite_mapping_count} (源) → {postgresql_mapping_count} (目标)")
+        for table_name, model_cls in migrations:
+            if table_name not in tables:
+                continue
+            sqlite_count = sqlite_session.query(model_cls).count()
+            postgresql_count = postgresql_session.query(model_cls).count()
+            print(f"{table_name}: {sqlite_count} (源) → {postgresql_count} (目标)")
         
         print()
         print("=" * 80)
-        print("✓ 数据迁移完成！")
+        print("[OK] 数据迁移完成！")
         print("=" * 80)
         
         return True
         
     except Exception as e:
-        print(f"✗ 迁移失败: {e}")
+        print(f"[FAIL] 迁移失败: {e}")
         postgresql_session.rollback()
         return False
         
